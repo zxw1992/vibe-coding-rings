@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# Project-specific (user data, not source)
+config.json
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride

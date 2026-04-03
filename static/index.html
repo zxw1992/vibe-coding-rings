@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vibe Coding Rings</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<!-- Tooltip (shared, positioned by JS) -->
+<div id="tooltip" class="tooltip" role="tooltip" aria-hidden="true"></div>
+
+<header>
+  <span class="app-title">VIBE CODING RINGS</span>
+  <div class="header-right">
+    <div class="streak-badge">
+      <span class="flame">🔥</span>
+      <span class="count" id="streak-count">—</span>
+      <span class="label"><span class="zh">天连续</span><span class="en" style="display:none">day streak</span></span>
+    </div>
+    <button class="lang-toggle" id="lang-toggle" title="切换语言 / Toggle language">EN</button>
+  </div>
+</header>
+
+<!-- Main card: rings + stats -->
+<div class="main-card">
+  <div class="rings-container">
+    <svg class="rings-svg" viewBox="0 0 280 280" id="rings-svg">
+      <!-- Tracks -->
+      <circle class="ring-track" cx="140" cy="140" r="120" stroke="#FF375F" stroke-opacity="0.15" stroke-width="18"/>
+      <circle class="ring-track" cx="140" cy="140" r="90"  stroke="#30D158" stroke-opacity="0.15" stroke-width="18"/>
+      <circle class="ring-track" cx="140" cy="140" r="60"  stroke="#0A84FF" stroke-opacity="0.15" stroke-width="18"/>
+      <!-- Progress arcs -->
+      <circle id="ring-tokens"  class="ring-progress" cx="140" cy="140" r="120" stroke="#FF375F" stroke-width="18"
+              data-ring="tokens" />
+      <circle id="ring-focus"   class="ring-progress" cx="140" cy="140" r="90"  stroke="#30D158" stroke-width="18"
+              data-ring="focus" />
+      <circle id="ring-tools"   class="ring-progress" cx="140" cy="140" r="60"  stroke="#0A84FF" stroke-width="18"
+              data-ring="tools" />
+    </svg>
+    <div class="rings-date">
+      <div class="month" id="date-month">APR</div>
+      <div class="day"   id="date-day">—</div>
+    </div>
+  </div>
+
+  <div class="ring-stats">
+    <!-- 消耗 -->
+    <div class="ring-stat" data-ring="tokens">
+      <div class="ring-dot" style="background:#FF375F;"></div>
+      <div class="ring-stat-info">
+        <div class="name-row">
+          <span class="zh name">消耗</span>
+          <span class="en name" style="display:none">Consume</span>
+        </div>
+        <div class="value-row">
+          <span class="current" id="tokens-val">—</span>
+          <span id="tokens-goal-str"></span>
+        </div>
+      </div>
+      <div class="ring-pct" id="tokens-pct" style="color:#FF375F;">—%</div>
+    </div>
+
+    <!-- 专注 -->
+    <div class="ring-stat" data-ring="focus">
+      <div class="ring-dot" style="background:#30D158;"></div>
+      <div class="ring-stat-info">
+        <div class="name-row">
+          <span class="zh name">专注</span>
+          <span class="en name" style="display:none">Focus</span>
+        </div>
+        <div class="value-row">
+          <span class="current" id="focus-val">—</span>
+          <span id="focus-goal-str"></span>
+        </div>
+      </div>
+      <div class="ring-pct" id="focus-pct" style="color:#30D158;">—%</div>
+    </div>
+
+    <!-- 行动 -->
+    <div class="ring-stat" data-ring="tools">
+      <div class="ring-dot" style="background:#0A84FF;"></div>
+      <div class="ring-stat-info">
+        <div class="name-row">
+          <span class="zh name">行动</span>
+          <span class="en name" style="display:none">Action</span>
+        </div>
+        <div class="value-row">
+          <span class="current" id="tools-val">—</span>
+          <span id="tools-goal-str"></span>
+        </div>
+      </div>
+      <div class="ring-pct" id="tools-pct" style="color:#0A84FF;">—%</div>
+    </div>
+  </div>
+</div>
+
+<!-- 7-day history with mini rings -->
+<div class="history-card">
+  <div class="section-title">
+    <span class="zh">7日历史</span>
+    <span class="en" style="display:none">7-Day History</span>
+  </div>
+  <div class="history-rings" id="history-rings">
+    <!-- filled by JS -->
+  </div>
+</div>
+
+<!-- Goals -->
+<details class="goals-card" id="goals-details">
+  <summary>
+    <span class="zh">每日目标</span>
+    <span class="en" style="display:none">Daily Goals</span>
+  </summary>
+  <div class="goals-inner">
+    <!-- 消耗 — input in M units -->
+    <div class="goal-row">
+      <label>
+        <span>
+          <span style="color:#FF375F">●</span>
+          <span class="zh">消耗</span>
+          <span class="en" style="display:none">Consume</span>
+        </span>
+        <span class="goal-num-wrap">
+          <input type="number" class="goal-num" id="goal-tokens-num"
+                 min="0.1" max="1000" step="0.5" value="1" />
+          <span class="goal-unit">M</span>
+        </span>
+      </label>
+      <input type="range" class="red" id="goal-tokens"
+             min="100000" max="50000000" step="100000" value="1000000" />
+    </div>
+    <!-- 专注 -->
+    <div class="goal-row">
+      <label>
+        <span>
+          <span style="color:#30D158">●</span>
+          <span class="zh">专注</span>
+          <span class="en" style="display:none">Focus</span>
+        </span>
+        <span class="goal-num-wrap">
+          <input type="number" class="goal-num" id="goal-focus-num"
+                 min="15" max="1440" step="15" value="120" />
+          <span class="goal-unit zh">分钟</span>
+          <span class="goal-unit en" style="display:none">min</span>
+        </span>
+      </label>
+      <input type="range" class="green" id="goal-focus"
+             min="15" max="1440" step="15" value="120" />
+    </div>
+    <!-- 行动 -->
+    <div class="goal-row">
+      <label>
+        <span>
+          <span style="color:#0A84FF">●</span>
+          <span class="zh">行动</span>
+          <span class="en" style="display:none">Action</span>
+        </span>
+        <span class="goal-num-wrap">
+          <input type="number" class="goal-num" id="goal-tools-num"
+                 min="1" max="9999" step="5" value="50" />
+          <span class="goal-unit zh">次</span>
+          <span class="goal-unit en" style="display:none">calls</span>
+        </span>
+      </label>
+      <input type="range" class="blue" id="goal-tools"
+             min="10" max="500" step="5" value="50" />
+    </div>
+  </div>
+</details>
+
+<footer>
+  <span class="zh">最后更新：</span>
+  <span class="en" style="display:none">Last updated: </span>
+  <span id="last-updated">—</span>
+</footer>
+
+<!-- ── Detail page overlay ── -->
+<div id="page-detail" class="detail-page" aria-hidden="true">
+  <div class="detail-header">
+    <button class="back-btn" id="detail-back">
+      <svg width="9" height="15" viewBox="0 0 9 15" fill="none">
+        <path d="M7.5 1.5L2 7.5L7.5 13.5" stroke="currentColor" stroke-width="2.2"
+              stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span class="zh">返回</span><span class="en" style="display:none">Back</span>
+    </button>
+    <div class="detail-header-ring">
+      <svg id="detail-mini-ring" width="58" height="58" viewBox="0 0 58 58"
+           style="transform:rotate(-90deg)">
+        <circle cx="29" cy="29" r="23" stroke="currentColor" stroke-opacity="0.18"
+                stroke-width="9" fill="none"/>
+        <circle id="detail-ring-arc" cx="29" cy="29" r="23" stroke="currentColor"
+                stroke-width="9" fill="none" stroke-linecap="round"
+                stroke-dasharray="144.51" stroke-dashoffset="144.51"/>
+      </svg>
+      <span id="detail-mini-pct" class="detail-mini-pct">—%</span>
+    </div>
+  </div>
+
+  <div id="detail-title" class="detail-title">—</div>
+
+  <div class="detail-subtitle">
+    <span id="detail-val-current" class="detail-val-current">—</span>
+    <span class="detail-val-sep"> / </span>
+    <span id="detail-val-goal">—</span>
+  </div>
+
+  <div class="detail-chart-wrap">
+    <svg id="detail-chart" viewBox="0 0 510 185"
+         preserveAspectRatio="xMidYMid meet"></svg>
+  </div>
+
+  <div class="detail-summary">
+    <span class="zh">总计：</span><span class="en" style="display:none">Total: </span>
+    <span id="detail-summary-val">—</span>
+  </div>
+</div>
+
+<script src="rings.js"></script>
+</body>
+</html>

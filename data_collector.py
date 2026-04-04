@@ -130,22 +130,16 @@ def _collect_tokens_and_tools(target: date) -> tuple[int, int]:
     return tokens, tool_calls
 
 
-# ── Focus time parsing (history.jsonl) ───────────────────────────────────────
+# ── Focus time helpers ────────────────────────────────────────────────────────
 
-def _calc_focus_minutes(target: date) -> float:
+def _read_history_sessions(start_ms: int, end_ms: int) -> dict[str, list[int]]:
     """
-    Calculate focused AI work time for the given LOCAL date using history.jsonl.
-    Uses 30-min idle gap to split sessions into focus blocks.
-    Timestamps in history.jsonl are epoch milliseconds (no timezone issue).
+    Read history.jsonl and return {sessionId: [epoch_ms, ...]} for timestamps
+    in [start_ms, end_ms).  Missing sessionId is grouped under '__nosid__'.
     """
-    if not HISTORY_FILE.exists():
-        return 0.0
-
-    start_ms, end_ms = _local_date_to_utc_ms_range(target)
-
     sessions: dict[str, list[int]] = {}
-    no_session_ts: list[int] = []
-
+    if not HISTORY_FILE.exists():
+        return sessions
     try:
         for raw_line in HISTORY_FILE.read_text(errors="ignore").splitlines():
             if not raw_line.strip():
@@ -160,32 +154,78 @@ def _calc_focus_minutes(target: date) -> float:
             ts = int(ts)
             if not (start_ms <= ts < end_ms):
                 continue
-            sid = entry.get("sessionId")
-            if sid:
-                sessions.setdefault(sid, []).append(ts)
-            else:
-                no_session_ts.append(ts)
+            # Exclude slash-command-only entries (e.g. automated /usage polling)
+            # These are not interactive conversational focus work.
+            display = entry.get("display", "")
+            if isinstance(display, str) and display.strip().startswith("/"):
+                continue
+            sid = entry.get("sessionId") or "__nosid__"
+            sessions.setdefault(sid, []).append(ts)
     except OSError:
+        pass
+    return sessions
+
+
+def _sessions_to_focus_blocks(sessions: dict[str, list[int]]) -> list[tuple[int, int]]:
+    """
+    Convert session timestamp lists to a list of (start_ms, end_ms) focus blocks.
+    Gaps > IDLE_GAP_MS within a session start a new block.
+    Each block's end gets TRAIL_BUFFER_MS added.
+    """
+    blocks: list[tuple[int, int]] = []
+    for ts_list in sessions.values():
+        if not ts_list:
+            continue
+        ts_sorted = sorted(ts_list)
+        blk_start = blk_end = ts_sorted[0]
+        for ts in ts_sorted[1:]:
+            if ts - blk_end > IDLE_GAP_MS:
+                blocks.append((blk_start, blk_end + TRAIL_BUFFER_MS))
+                blk_start = ts
+            blk_end = ts
+        blocks.append((blk_start, blk_end + TRAIL_BUFFER_MS))
+    return blocks
+
+
+def _merge_intervals(intervals: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    """Sort and merge overlapping [start, end) intervals."""
+    if not intervals:
+        return []
+    result = [sorted(intervals)[0]]
+    for s, e in sorted(intervals)[1:]:
+        if s <= result[-1][1]:
+            result[-1] = (result[-1][0], max(result[-1][1], e))
+        else:
+            result.append((s, e))
+    return result
+
+
+def _interval_ms_in_range(merged: list[tuple[int, int]], lo: int, hi: int) -> int:
+    """Sum the milliseconds of merged intervals that fall within [lo, hi)."""
+    total = 0
+    for s, e in merged:
+        cs, ce = max(s, lo), min(e, hi)
+        if cs < ce:
+            total += ce - cs
+    return total
+
+
+# ── Focus time parsing (history.jsonl) ───────────────────────────────────────
+
+def _calc_focus_minutes(target: date) -> float:
+    """
+    Calculate focused AI work time for the given LOCAL date using history.jsonl.
+    Uses 30-min idle gap to split sessions into focus blocks, then merges
+    overlapping blocks so parallel sessions are never double-counted.
+    """
+    start_ms, end_ms = _local_date_to_utc_ms_range(target)
+    sessions = _read_history_sessions(start_ms, end_ms)
+    if not sessions:
         return 0.0
 
-    def _sum_session(timestamps: list[int]) -> int:
-        if not timestamps:
-            return 0
-        ts_sorted = sorted(timestamps)
-        block_start = block_end = ts_sorted[0]
-        accumulated = 0
-        for ts in ts_sorted[1:]:
-            if ts - block_end > IDLE_GAP_MS:
-                accumulated += (block_end - block_start) + TRAIL_BUFFER_MS
-                block_start = ts
-            block_end = ts
-        accumulated += (block_end - block_start) + TRAIL_BUFFER_MS
-        return accumulated
-
-    total_ms = sum(_sum_session(v) for v in sessions.values())
-    if no_session_ts:
-        total_ms += _sum_session(no_session_ts)
-
+    blocks = _sessions_to_focus_blocks(sessions)
+    merged = _merge_intervals(blocks)
+    total_ms = _interval_ms_in_range(merged, start_ms, end_ms)
     return total_ms / 60_000
 
 
@@ -240,43 +280,19 @@ def collect_hourly(target: date) -> dict[str, list]:
                 continue
 
     # --- focus minutes from history.jsonl (local hours) ---
+    # Build merged focus-block intervals for the whole day, then intersect each
+    # hour bucket.  This prevents >60 min/hour and double-counting of sessions.
     focus_h = [0.0] * 24
 
-    if HISTORY_FILE.exists():
-        hour_sid_ts: dict[int, dict[str, list[int]]] = {h: {} for h in range(24)}
-        try:
-            for raw_line in HISTORY_FILE.read_text(errors="ignore").splitlines():
-                if not raw_line.strip():
-                    continue
-                try:
-                    entry = json.loads(raw_line)
-                except json.JSONDecodeError:
-                    continue
-                ts = entry.get("timestamp")
-                if not isinstance(ts, (int, float)):
-                    continue
-                ts = int(ts)
-                if not (start_ms <= ts < end_ms):
-                    continue
-                hour = _ms_to_local_hour(ts)
-                sid  = entry.get("sessionId", "__nosid__")
-                hour_sid_ts[hour].setdefault(sid, []).append(ts)
-        except OSError:
-            pass
-
+    sessions = _read_history_sessions(start_ms, end_ms)
+    if sessions:
+        blocks = _sessions_to_focus_blocks(sessions)
+        merged = _merge_intervals(blocks)
         hour_ms = 3_600_000
         for h in range(24):
-            hour_start_ms = start_ms + h * hour_ms
-            hour_end_ms   = hour_start_ms + hour_ms
-            total = 0
-            for ts_list in hour_sid_ts[h].values():
-                if not ts_list:
-                    continue
-                ts_sorted = sorted(ts_list)
-                span  = ts_sorted[-1] - ts_sorted[0]
-                trail = min(TRAIL_BUFFER_MS, max(0, hour_end_ms - ts_sorted[-1]))
-                total += span + trail
-            focus_h[h] = total / 60_000
+            hour_lo = start_ms + h * hour_ms
+            hour_hi = hour_lo + hour_ms
+            focus_h[h] = _interval_ms_in_range(merged, hour_lo, hour_hi) / 60_000
 
     return {"tokens": tokens_h, "tools": tools_h, "focus": focus_h}
 

@@ -483,7 +483,7 @@ function hideDetailPage() {
 }
 
 function renderDetail(data, meta) {
-  const { hourly, total, goal, goal_per_hour } = data;
+  const { hourly, total, goal } = data;
   const pct = goal > 0 ? total / goal : 0;
   const CIRC = 144.51;
 
@@ -501,11 +501,10 @@ function renderDetail(data, meta) {
   document.getElementById("detail-val-goal").textContent = meta.fmtGoal(goal);
   document.getElementById("detail-summary-val").textContent = meta.fmtVal(total);
 
-  // Bar chart — pass fmtVal so y-axis and tooltips use correct units
-  renderHourlyChart(hourly, goal_per_hour, meta.color, meta.fmtVal);
+  renderHourlyChart(hourly, meta.color, meta.fmtVal);
 }
 
-function renderHourlyChart(hourly, goalPerHour, color, fmtVal) {
+function renderHourlyChart(hourly, color, fmtVal) {
   const svg = document.getElementById("detail-chart");
   svg.innerHTML = "";
 
@@ -516,7 +515,7 @@ function renderHourlyChart(hourly, goalPerHour, color, fmtVal) {
   const slotW = cw / 24;
   const barW = Math.max(slotW * 0.58, 5);
 
-  const maxVal = Math.max(...hourly, goalPerHour * 1.05, 1);
+  const maxVal = Math.max(...hourly, 1);
 
   const NS = "http://www.w3.org/2000/svg";
   const FONT = "-apple-system,BlinkMacSystemFont,sans-serif";
@@ -540,30 +539,6 @@ function renderHourlyChart(hourly, goalPerHour, color, fmtVal) {
   defs.appendChild(gradHov);
   svg.appendChild(defs);
 
-  // ── Goal line ────────────────────────────────────────────────────────────
-  if (goalPerHour > 0 && goalPerHour <= maxVal * 1.05) {
-    const gy = cyAxis - (goalPerHour / maxVal) * ch;
-    svg.appendChild(mk("line", {
-      x1: cx0, y1: gy, x2: cxEnd, y2: gy,
-      stroke: color, "stroke-opacity": "0.45",
-      "stroke-width": "1.2", "stroke-dasharray": "4 3",
-    }));
-    // Value label on the right of the line
-    const goalLabel = fmtVal(goalPerHour);
-    svg.appendChild(mk("text", {
-      x: cxEnd + 3, y: gy + 4,
-      "text-anchor": "start",
-      fill: color, "fill-opacity": "0.7",
-      "font-size": "9", "font-family": FONT,
-    }, goalLabel));
-    // Small "avg/hr" caption
-    svg.appendChild(mk("text", {
-      x: cxEnd + 3, y: gy + 14,
-      "text-anchor": "start",
-      fill: color, "fill-opacity": "0.4",
-      "font-size": "8", "font-family": FONT,
-    }, currentLang === "zh" ? "/时" : "/hr"));
-  }
 
   // ── Bars ─────────────────────────────────────────────────────────────────
   const bars = [];
@@ -571,14 +546,13 @@ function renderHourlyChart(hourly, goalPerHour, color, fmtVal) {
     const x = cx0 + i * slotW + (slotW - barW) / 2;
     const barH = (val / maxVal) * ch;
     const bar = mk("rect", {
-      x, y: cyAxis,
-      width: barW, height: 0,
+      x, y: cyAxis - barH,
+      width: barW, height: barH,
       rx: Math.min(3, barW / 2),
       fill: val > 0 ? "url(#hbargrad)" : "none",
-      style: "cursor: default; transition: fill 0.15s;",
+      opacity: "0",
+      style: "cursor: default;",
     });
-    bar._ty  = cyAxis - barH;
-    bar._th  = barH;
     bar._val = val;
     bars.push(bar);
     svg.appendChild(bar);
@@ -635,15 +609,12 @@ function renderHourlyChart(hourly, goalPerHour, color, fmtVal) {
     svg.appendChild(hit);
   });
 
-  // ── Animate bars up (staggered) ──────────────────────────────────────────
+  // ── Fade bars in (staggered) ─────────────────────────────────────────────
   requestAnimationFrame(() => requestAnimationFrame(() => {
     bars.forEach((bar, i) => {
-      if (bar._th <= 0) return;
-      bar.style.transition =
-        `y 0.6s cubic-bezier(0.4,0,0.2,1) ${i * 10}ms, ` +
-        `height 0.6s cubic-bezier(0.4,0,0.2,1) ${i * 10}ms`;
-      bar.setAttribute("y", bar._ty);
-      bar.setAttribute("height", bar._th);
+      if (bar._val <= 0) return;
+      bar.style.transition = `opacity 0.5s ease ${i * 12}ms`;
+      bar.setAttribute("opacity", "1");
     });
   }));
 }

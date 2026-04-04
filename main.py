@@ -132,7 +132,7 @@ def api_hourly(metric: str = "tokens", d: str = ""):
     hourly_data = collect_hourly(target)
     day_metrics = collect_day_metrics(target, goals)
 
-    goal_map = {"tokens": goals.tokens, "tools": goals.tool_calls, "focus": goals.focus_min}
+    goal_map  = {"tokens": goals.tokens, "tools": goals.tool_calls, "focus": goals.focus_min}
     total_map = {"tokens": day_metrics.tokens, "tools": day_metrics.tool_calls, "focus": day_metrics.focus_min}
 
     return {
@@ -141,7 +141,6 @@ def api_hourly(metric: str = "tokens", d: str = ""):
         "hourly": hourly_data[metric],
         "total": total_map[metric],
         "goal": goal_map[metric],
-        "goal_per_hour": round(goal_map[metric] / 24, 2),
     }
 
 

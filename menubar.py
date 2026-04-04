@@ -15,12 +15,71 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 import rumps
 import uvicorn
+from AppKit import NSView, NSColor, NSBezierPath
 
 from config import load_config
 from data_collector import collect_day_metrics, collect_history, calc_streak
 
 PORT = 8765
 REFRESH_INTERVAL = 60  # seconds
+
+# ── Ring view constants ───────────────────────────────────────────────────────
+
+# (radius, sRGB r, g, b) — colours match style.css
+_RING_DEFS = [
+    (25.0, 1.000, 0.216, 0.373),   # outer  — red   #FF375F  (consume)
+    (17.5, 0.188, 0.820, 0.345),   # middle — green #30D158  (focus)
+    (10.0, 0.039, 0.518, 1.000),   # inner  — blue  #0A84FF  (action)
+]
+_TRACK_W = 5.5
+_VIEW_H  = 68
+_VIEW_W  = 300   # wider than any text item so the menu width is stable
+
+
+class _RingsMenuView(NSView):
+    """Custom NSView drawn as three concentric activity rings inside a menu item."""
+
+    _pcts: tuple = (0.0, 0.0, 0.0)
+
+    def drawRect_(self, rect):
+        # Transparent background — menu surface shows through
+        NSColor.clearColor().set()
+        NSBezierPath.fillRect_(rect)
+
+        cx = self.bounds().size.width  / 2
+        cy = self.bounds().size.height / 2
+
+        for (radius, r, g, b), pct in zip(_RING_DEFS, self._pcts):
+            capped = min(pct, 1.0)
+
+            # Dim track ring
+            NSColor.colorWithCalibratedRed_green_blue_alpha_(
+                r * 0.18, g * 0.18, b * 0.18, 1.0
+            ).set()
+            track = NSBezierPath.bezierPath()
+            track.setLineWidth_(_TRACK_W)
+            track.appendBezierPathWithArcWithCenter_radius_startAngle_endAngle_(
+                (cx, cy), radius, 0, 360
+            )
+            track.stroke()
+
+            if capped <= 0.001:
+                continue
+
+            # Progress arc — clockwise from top (90°)
+            NSColor.colorWithCalibratedRed_green_blue_alpha_(r, g, b, 1.0).set()
+            arc = NSBezierPath.bezierPath()
+            arc.setLineWidth_(_TRACK_W)
+            arc.setLineCapStyle_(1)   # NSRoundLineCapStyle
+            if capped >= 1.0:
+                arc.appendBezierPathWithArcWithCenter_radius_startAngle_endAngle_(
+                    (cx, cy), radius, 0, 360
+                )
+            else:
+                arc.appendBezierPathWithArcWithCenter_radius_startAngle_endAngle_clockwise_(
+                    (cx, cy), radius, 90, 90 - capped * 360, True
+                )
+            arc.stroke()
 
 
 # ── Formatters ──────────────────────────────────────────────────────────────
@@ -64,6 +123,14 @@ class VibeCodingRingsApp(rumps.App):
         self._item_header = rumps.MenuItem("VIBE CODING RINGS")
         self._item_header.enabled = False
 
+        # Rings visualisation (custom NSView)
+        self._item_rings = rumps.MenuItem("")
+        self._item_rings.enabled = False
+        self._rings_view = _RingsMenuView.alloc().initWithFrame_(
+            ((0, 0), (_VIEW_W, _VIEW_H))
+        )
+        self._item_rings._menuitem.setView_(self._rings_view)
+
         # Three metric items — enabled, with click callbacks
         self._item_tokens = rumps.MenuItem("—", callback=lambda _: self._open_detail("tokens"))
         self._item_focus  = rumps.MenuItem("—", callback=lambda _: self._open_detail("focus"))
@@ -77,6 +144,8 @@ class VibeCodingRingsApp(rumps.App):
 
         self.menu = [
             self._item_header,
+            None,
+            self._item_rings,
             None,
             self._item_tokens,
             self._item_focus,
@@ -121,6 +190,9 @@ class VibeCodingRingsApp(rumps.App):
 
             lowest = min(metrics.token_pct, metrics.focus_pct, metrics.tool_pct)
             self.title = "⬤" if lowest >= 1.0 else f"{round(lowest * 100)}%"
+
+            # Update ring arcs (drawRect_ is called lazily when menu opens)
+            self._rings_view._pcts = (metrics.token_pct, metrics.focus_pct, metrics.tool_pct)
 
             tok_str  = _fmt_tokens(metrics.tokens)
             tok_goal = _fmt_goal_tokens(goals.tokens)

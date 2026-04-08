@@ -17,6 +17,9 @@ config.json
 # Devlog (local session notes)
 devlog/
 
+# Claude Code project instructions (local only)
+CLAUDE.md
+
 # macOS
 .DS_Store
 .AppleDouble

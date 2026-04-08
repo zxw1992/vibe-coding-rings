@@ -1,5 +1,7 @@
 # Vibe Coding Rings
 
+[中文文档](README_zh.md)
+
 A local macOS dashboard that visualises your [Claude Code](https://claude.ai/code) usage as three animated concentric rings — inspired by Apple Activity Rings. All data is read passively from `~/.claude/` with no external services or API keys required.
 
 ![Dashboard](docs/dashboard.png)

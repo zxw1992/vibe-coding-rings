@@ -14,6 +14,9 @@ env/
 # Project-specific (user data, not source)
 config.json
 
+# Devlog (local session notes)
+devlog/
+
 # macOS
 .DS_Store
 .AppleDouble

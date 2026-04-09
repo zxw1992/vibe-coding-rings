@@ -24,6 +24,9 @@ dist/
 # Claude Code project instructions (local only)
 CLAUDE.md
 
+# Personal notes (local only)
+TODO.md
+
 # macOS
 .DS_Store
 .AppleDouble

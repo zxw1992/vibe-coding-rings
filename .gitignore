@@ -17,6 +17,10 @@ config.json
 # Devlog (local session notes)
 devlog/
 
+# py2app build artifacts
+build/
+dist/
+
 # Claude Code project instructions (local only)
 CLAUDE.md
 

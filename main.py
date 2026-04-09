@@ -1,4 +1,5 @@
 from __future__ import annotations
+import sys
 import threading
 import time
 import webbrowser
@@ -14,7 +15,11 @@ from pydantic import BaseModel
 from config import Goals, load_config, save_config
 from data_collector import collect_day_metrics, collect_history, calc_streak, collect_hourly
 
-BASE_DIR = Path(__file__).parent
+# When running as a py2app bundle, Resources/ is two levels above the binary.
+if getattr(sys, "frozen", False):
+    BASE_DIR = Path(sys.executable).parent.parent / "Resources"
+else:
+    BASE_DIR = Path(__file__).parent
 PORT = 8765
 
 app = FastAPI(title="Vibe Coding Rings")

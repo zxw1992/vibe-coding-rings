@@ -1,10 +1,17 @@
 from __future__ import annotations
 import json
+import sys
 from pathlib import Path
 from dataclasses import dataclass, asdict
 
-PROJECT_DIR = Path(__file__).parent
-CONFIG_FILE = PROJECT_DIR / "config.json"
+# When running as a py2app bundle the app contents are read-only,
+# so store config in ~/Library/Application Support/VibeCodingRings/.
+if getattr(sys, "frozen", False):
+    _config_dir = Path.home() / "Library" / "Application Support" / "VibeCodingRings"
+    _config_dir.mkdir(parents=True, exist_ok=True)
+    CONFIG_FILE = _config_dir / "config.json"
+else:
+    CONFIG_FILE = Path(__file__).parent / "config.json"
 
 CLAUDE_DIR = Path.home() / ".claude"
 HISTORY_FILE = CLAUDE_DIR / "history.jsonl"

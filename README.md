@@ -4,12 +4,12 @@
 
 A local macOS dashboard that visualises your [Claude Code](https://claude.ai/code) usage as three animated concentric rings — inspired by Apple Activity Rings. All data is read passively from `~/.claude/` with no external services or API keys required.
 
-![Dashboard](docs/dashboard.png)
+![Dashboard](docs/dashboard_en.png)
 
 <p align="center">
-  <img src="docs/menubar.png" width="320" alt="Menubar"/>
+  <img src="docs/menubar_en.png" width="320" alt="Menubar"/>
   &nbsp;&nbsp;
-  <img src="docs/detail.png" width="600" alt="Hourly detail"/>
+  <img src="docs/detail_en.png" width="600" alt="Hourly detail"/>
 </p>
 
 ## Three rings

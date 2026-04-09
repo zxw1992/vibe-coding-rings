@@ -29,7 +29,7 @@ class Goals:
     tokens: int = 1_000_000
     focus_min: int = 120
     tool_calls: int = 50
-    lang: str = "zh"
+    lang: str = "en"
 
 
 def load_config() -> Goals:

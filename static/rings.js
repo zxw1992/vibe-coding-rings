@@ -1,7 +1,7 @@
 // ── Language management ──
 
 const LANG_KEY = "vcc_lang";
-let currentLang = localStorage.getItem(LANG_KEY) || "zh";
+let currentLang = localStorage.getItem(LANG_KEY) || "en";
 
 function applyLang(lang, syncServer = false) {
   currentLang = lang;
@@ -17,6 +17,8 @@ function applyLang(lang, syncServer = false) {
   document.querySelectorAll(".en").forEach(el => {
     el.style.display = lang === "en" ? "" : "none";
   });
+
+  applyHistoryLabels();
 
   if (syncServer) {
     fetch("/api/lang", {

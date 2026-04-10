@@ -2,7 +2,7 @@
 
 [English](README.md)
 
-一个本地 macOS 看板，将你的 [Claude Code](https://claude.ai/code) 使用情况以三个同心动态圆环的形式呈现——灵感来自苹果健身环。所有数据被动读取自 `~/.claude/`，无需任何外部服务或 API Key。
+一个本地看板，将你的 [Claude Code](https://claude.ai/code) 使用情况以三个同心动态圆环的形式呈现——灵感来自苹果健身环。所有数据被动读取自 `~/.claude/`，无需任何外部服务或 API Key。支持 macOS、Windows、Linux。
 
 ![Dashboard](docs/dashboard.png)
 
@@ -31,9 +31,9 @@
 
 ## 环境要求
 
-- macOS（菜单栏模式需要 macOS；纯 Web 看板在任意 Python 环境下可运行）
 - Python 3.9+
 - 已安装并使用 Claude Code（数据存放于 `~/.claude/`）
+- macOS / Windows / Linux
 
 ## 安装
 
@@ -50,7 +50,7 @@ pip install -r requirements.txt
 python main.py
 ```
 
-**macOS 菜单栏应用** — 在系统托盘显示实时数据，同时提供 Web UI
+**系统托盘应用** — 在菜单栏/托盘显示实时数据，同时提供 Web UI（支持 macOS、Windows、Linux）
 ```bash
 python menubar.py
 ```
@@ -72,7 +72,7 @@ python data_collector.py
 config.py          目标配置 + config.json 读写
 data_collector.py  所有 ~/.claude/ 数据解析，不依赖服务器
 main.py            FastAPI 服务器 + 自动打开浏览器
-menubar.py         rumps 菜单栏应用，后台运行 FastAPI
+menubar.py         系统托盘应用（macOS 用 rumps，Windows/Linux 用 pystray）
 static/
   index.html       单页应用（主看板 + 详情页）
   style.css        深色主题，苹果健身环配色
@@ -93,10 +93,12 @@ static/
 ```
 fastapi>=0.100
 uvicorn>=0.20
-rumps>=0.4.0    # 仅菜单栏模式需要（macOS）
+rumps>=0.4.0      # 仅 macOS，托盘模式自动使用
+pystray>=0.19     # 仅 Windows/Linux，托盘模式自动使用
+pillow>=9.0       # 仅 Windows/Linux（托盘图标渲染）
 ```
 
-`rumps` 依赖 `pyobjc`，仅限 macOS。如需跨平台托盘支持，可将 `menubar.py` 替换为 [`pystray`](https://github.com/moses-palmer/pystray)，FastAPI 后台线程模式保持不变。
+`menubar.py` 在运行时自动判断平台，macOS 使用原生 `rumps`，Windows/Linux 使用 `pystray`。
 
 ## 许可证
 

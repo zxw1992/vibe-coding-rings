@@ -31,9 +31,9 @@ A local macOS dashboard that visualises your [Claude Code](https://claude.ai/cod
 
 ## Requirements
 
-- macOS (menubar mode requires macOS; web dashboard works anywhere Python runs)
 - Python 3.9+
 - Claude Code installed and in use (data lives in `~/.claude/`)
+- macOS / Windows / Linux
 
 ## Installation
 
@@ -50,7 +50,7 @@ pip install -r requirements.txt
 python main.py
 ```
 
-**macOS menubar app** — shows live stats in the system tray and serves the web UI
+**System tray app** — shows live stats in the menubar/tray and serves the web UI (macOS, Windows, Linux)
 ```bash
 python menubar.py
 ```
@@ -72,7 +72,7 @@ Adjust them via the "每日目标 / Daily Goals" panel in the web UI — drag th
 config.py          Goals dataclass + load/save config.json
 data_collector.py  All ~/.claude/ parsing — no server imports
 main.py            FastAPI server + browser auto-launch
-menubar.py         rumps menubar app; starts FastAPI in a daemon thread
+menubar.py         System tray app (rumps on macOS, pystray on Windows/Linux)
 static/
   index.html       Single-page app (main dashboard + detail overlay)
   style.css        Dark theme, Apple Fitness colour palette
@@ -93,10 +93,12 @@ No data ever leaves your machine.
 ```
 fastapi>=0.100
 uvicorn>=0.20
-rumps>=0.4.0    # macOS menubar only
+rumps>=0.4.0      # macOS only — installed automatically on macOS
+pystray>=0.19     # Windows/Linux only
+pillow>=9.0       # Windows/Linux only (tray icon rendering)
 ```
 
-`rumps` depends on `pyobjc` and is macOS-only. For cross-platform tray support, replace `menubar.py` with [`pystray`](https://github.com/moses-palmer/pystray) using the same FastAPI server-thread pattern.
+`menubar.py` detects the platform at runtime and uses `rumps` (native macOS menubar) or `pystray` (Windows/Linux system tray) automatically.
 
 ## License
 

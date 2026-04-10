@@ -1,3 +1,5 @@
 fastapi>=0.100
 uvicorn>=0.20
-rumps>=0.4.0          # macOS menubar app (macOS only)
+rumps>=0.4.0          # macOS system tray (macOS only)
+pystray>=0.19         # Windows/Linux system tray
+pillow>=9.0           # Windows/Linux tray icon rendering

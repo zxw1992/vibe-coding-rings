@@ -270,6 +270,9 @@ function updateHistory(days) {
     // Labels set by applyHistoryLabels()
     col.appendChild(label);
 
+    // Click → date detail page
+    col.addEventListener("click", () => { hideTooltip(); showDateDetailPage(day.date); });
+
     // Hover tooltip
     col.addEventListener("mousemove", e => {
       showTooltip(buildTooltipHtml(day, null, currentLang), e.clientX, e.clientY);
@@ -577,12 +580,12 @@ function renderDetail(data, meta) {
   document.getElementById("detail-val-goal").textContent = meta.fmtGoal(goal);
   document.getElementById("detail-summary-val").textContent = meta.fmtVal(total);
 
-  renderHourlyChart(hourly, meta.color, meta.fmtVal);
+  renderHourlyChart(document.getElementById("detail-chart"), hourly, meta.color, meta.fmtVal);
 }
 
-function renderHourlyChart(hourly, color, fmtVal) {
-  const svg = document.getElementById("detail-chart");
-  svg.innerHTML = "";
+function renderHourlyChart(svgEl, hourly, color, fmtVal, gradId = "hbargrad") {
+  svgEl.innerHTML = "";
+  const svg = svgEl;
 
   // Layout
   const cx0 = 28, cxEnd = 472, cy0 = 14, cyAxis = 148;
@@ -604,12 +607,13 @@ function renderHourlyChart(hourly, color, fmtVal) {
 
   // ── Gradient ──────────────────────────────────────────────────────────────
   const defs = mk("defs", {});
-  const grad = mk("linearGradient", { id: "hbargrad", x1: "0", y1: "1", x2: "0", y2: "0" });
+  const gradHovId = gradId + "-hov";
+  const grad = mk("linearGradient", { id: gradId, x1: "0", y1: "1", x2: "0", y2: "0" });
   grad.appendChild(mk("stop", { offset: "0%",   "stop-color": color, "stop-opacity": "0.18" }));
   grad.appendChild(mk("stop", { offset: "100%", "stop-color": color, "stop-opacity": "1.0"  }));
   defs.appendChild(grad);
   // Hover highlight gradient (brighter)
-  const gradHov = mk("linearGradient", { id: "hbargrad-hov", x1: "0", y1: "1", x2: "0", y2: "0" });
+  const gradHov = mk("linearGradient", { id: gradHovId, x1: "0", y1: "1", x2: "0", y2: "0" });
   gradHov.appendChild(mk("stop", { offset: "0%",   "stop-color": color, "stop-opacity": "0.4" }));
   gradHov.appendChild(mk("stop", { offset: "100%", "stop-color": "#FFFFFF", "stop-opacity": "1.0" }));
   defs.appendChild(gradHov);
@@ -625,7 +629,7 @@ function renderHourlyChart(hourly, color, fmtVal) {
       x, y: cyAxis - barH,
       width: barW, height: barH,
       rx: Math.min(3, barW / 2),
-      fill: val > 0 ? "url(#hbargrad)" : "none",
+      fill: val > 0 ? `url(#${gradId})` : "none",
       opacity: "0",
       style: "cursor: default;",
     });
@@ -663,7 +667,7 @@ function renderHourlyChart(hourly, color, fmtVal) {
 
     hit.addEventListener("mouseenter", () => {
       if (val > 0) {
-        bar.setAttribute("fill", "url(#hbargrad-hov)");
+        bar.setAttribute("fill", `url(#${gradHovId})`);
         const hourLabel = `${String(i).padStart(2, "0")}:00 – ${String(i + 1).padStart(2, "0")}:00`;
         showTooltip(
           `<div class="tooltip-date">${hourLabel}</div>` +
@@ -678,7 +682,7 @@ function renderHourlyChart(hourly, color, fmtVal) {
     });
 
     hit.addEventListener("mouseleave", () => {
-      if (val > 0) bar.setAttribute("fill", "url(#hbargrad)");
+      if (val > 0) bar.setAttribute("fill", `url(#${gradId})`);
       hideTooltip();
     });
 
@@ -695,6 +699,102 @@ function renderHourlyChart(hourly, color, fmtVal) {
   }));
 }
 
+// ═══════════════════════════════════════════════════
+// ── Date detail page (history click) ──
+// ═══════════════════════════════════════════════════
+
+let _currentDateDetail = null;
+
+async function showDateDetailPage(dateStr) {
+  _currentDateDetail = dateStr;
+  const page = document.getElementById("page-date-detail");
+
+  // Date title
+  const d = new Date(dateStr + "T12:00:00");
+  document.getElementById("date-detail-title").textContent =
+    currentLang === "zh"
+      ? d.toLocaleDateString("zh-CN", { month: "long", day: "numeric", weekday: "long" })
+      : d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+
+  // Show page
+  page.classList.add("visible");
+  page.setAttribute("aria-hidden", "false");
+  document.body.style.overflow = "hidden";
+  page.querySelectorAll(".zh").forEach(el => { el.style.display = currentLang === "zh" ? "" : "none"; });
+  page.querySelectorAll(".en").forEach(el => { el.style.display = currentLang === "en" ? "" : "none"; });
+
+  // Placeholder while loading
+  const sections = document.getElementById("date-detail-sections");
+  sections.innerHTML = '<div class="dds-loading">…</div>';
+
+  try {
+    const [tokData, focData, toolData] = await Promise.all([
+      fetch(`/api/hourly?metric=tokens&d=${dateStr}`).then(r => r.json()),
+      fetch(`/api/hourly?metric=focus&d=${dateStr}`).then(r => r.json()),
+      fetch(`/api/hourly?metric=tools&d=${dateStr}`).then(r => r.json()),
+    ]);
+    renderDateDetailSections(sections, [
+      { data: tokData,  meta: METRIC_META.tokens },
+      { data: focData,  meta: METRIC_META.focus  },
+      { data: toolData, meta: METRIC_META.tools  },
+    ]);
+  } catch (e) {
+    sections.innerHTML = '<div class="dds-loading">Failed to load</div>';
+    console.error("Date detail fetch failed", e);
+  }
+}
+
+function renderDateDetailSections(container, items) {
+  container.innerHTML = "";
+  items.forEach(({ data, meta }, idx) => {
+    const pct = data.goal > 0 ? data.total / data.goal : 0;
+
+    const section = document.createElement("div");
+    section.className = "dds-section";
+
+    // Header row
+    const header = document.createElement("div");
+    header.className = "dds-header";
+    header.innerHTML =
+      `<span class="dds-dot" style="background:${meta.color}"></span>` +
+      `<span class="dds-name" style="color:${meta.color}">` +
+        `<span class="zh">${meta.zhName}</span>` +
+        `<span class="en">${meta.enName}</span>` +
+      `</span>` +
+      `<span class="dds-values">${meta.fmtVal(data.total)} / ${meta.fmtGoal(data.goal)}</span>` +
+      `<span class="dds-pct" style="color:${meta.color}">${fmtPct(pct)}</span>`;
+    // Apply lang
+    header.querySelectorAll(".zh").forEach(el => { el.style.display = currentLang === "zh" ? "" : "none"; });
+    header.querySelectorAll(".en").forEach(el => { el.style.display = currentLang === "en" ? "" : "none"; });
+
+    // Chart
+    const chartWrap = document.createElement("div");
+    chartWrap.className = "dds-chart-wrap";
+    const svgEl = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svgEl.setAttribute("viewBox", "0 0 510 185");
+    svgEl.setAttribute("preserveAspectRatio", "xMidYMid meet");
+    svgEl.style.cssText = "width:100%;height:auto;display:block;";
+    chartWrap.appendChild(svgEl);
+
+    section.appendChild(header);
+    section.appendChild(chartWrap);
+    container.appendChild(section);
+
+    renderHourlyChart(svgEl, data.hourly, meta.color, meta.fmtVal, `hbargrad-dd${idx}`);
+  });
+}
+
+function hideDateDetailPage() {
+  const page = document.getElementById("page-date-detail");
+  page.classList.remove("visible");
+  page.setAttribute("aria-hidden", "true");
+  document.body.style.overflow = "";
+  _currentDateDetail = null;
+}
+
+document.getElementById("date-detail-back").addEventListener("click", hideDateDetailPage);
+
+
 // Click handlers: ring-stat rows open detail page
 document.querySelectorAll(".ring-stat[data-ring]").forEach(row => {
   row.addEventListener("click", () => showDetailPage(row.dataset.ring));
@@ -705,7 +805,9 @@ document.getElementById("detail-back").addEventListener("click", hideDetailPage)
 
 // ESC to close
 document.addEventListener("keydown", e => {
-  if (e.key === "Escape" && _currentDetailMetric) hideDetailPage();
+  if (e.key !== "Escape") return;
+  if (_currentDetailMetric) hideDetailPage();
+  else if (_currentDateDetail) hideDateDetailPage();
 });
 
 // ── Hash-based deep-link navigation ──────────────────────────────────────────

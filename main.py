@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from config import Goals, load_config, save_config
-from data_collector import collect_day_metrics, collect_history, calc_streak, collect_hourly
+from data_collector import collect_day_metrics, collect_history, calc_streak, collect_hourly, _PROVIDERS
 
 # When running as a py2app bundle, Resources/ is two levels above the binary.
 if getattr(sys, "frozen", False):
@@ -40,6 +40,17 @@ class GoalsIn(BaseModel):
 
 class LangIn(BaseModel):
     lang: str
+
+class AgentsIn(BaseModel):
+    enabled: list[str]
+
+
+AGENT_META: dict[str, dict] = {
+    "claude_code": {"label": "Claude Code", "dir": "~/.claude"},
+    "codex":       {"label": "Codex",       "dir": "~/.codex"},
+    "gemini":      {"label": "Gemini CLI",  "dir": "~/.gemini"},
+    "opencode":    {"label": "OpenCode",    "dir": "~/.opencode"},
+}
 
 
 # ---------- API routes (must be before static mount) ----------
@@ -98,7 +109,10 @@ def api_get_goals():
 def api_set_goals(body: GoalsIn):
     if body.tokens < 10_000 or body.focus_min < 1 or body.tool_calls < 1:
         raise HTTPException(status_code=400, detail="Invalid goal values")
-    goals = Goals(tokens=body.tokens, focus_min=body.focus_min, tool_calls=body.tool_calls)
+    goals = load_config()   # preserve lang and enabled_agents
+    goals.tokens    = body.tokens
+    goals.focus_min = body.focus_min
+    goals.tool_calls = body.tool_calls
     save_config(goals)
     for fn in _goals_changed_callbacks:
         try:
@@ -106,6 +120,38 @@ def api_set_goals(body: GoalsIn):
         except Exception:
             pass
     return {"tokens": goals.tokens, "focus_min": goals.focus_min, "tool_calls": goals.tool_calls}
+
+
+@app.get("/api/agents")
+def api_get_agents():
+    goals = load_config()
+    return [
+        {
+            "id":        aid,
+            "label":     meta["label"],
+            "dir":       meta["dir"],
+            "enabled":   aid in goals.enabled_agents,
+            "available": _PROVIDERS[aid].is_available(),
+        }
+        for aid, meta in AGENT_META.items()
+    ]
+
+
+@app.post("/api/agents")
+def api_set_agents(body: AgentsIn):
+    valid = set(AGENT_META.keys())
+    enabled = [a for a in body.enabled if a in valid]
+    if not enabled:
+        raise HTTPException(status_code=400, detail="At least one agent must be enabled")
+    goals = load_config()
+    goals.enabled_agents = enabled
+    save_config(goals)
+    for fn in _goals_changed_callbacks:
+        try:
+            fn()
+        except Exception:
+            pass
+    return {"enabled": enabled}
 
 
 @app.post("/api/lang")
@@ -134,7 +180,7 @@ def api_hourly(metric: str = "tokens", d: str = ""):
         raise HTTPException(status_code=400, detail="invalid date")
 
     goals = load_config()
-    hourly_data = collect_hourly(target)
+    hourly_data = collect_hourly(target, goals)
     day_metrics = collect_day_metrics(target, goals)
 
     goal_map  = {"tokens": goals.tokens, "tools": goals.tool_calls, "focus": goals.focus_min}

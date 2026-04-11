@@ -2,7 +2,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 
 # When running as a py2app bundle the app contents are read-only,
 # so store config in ~/Library/Application Support/VibeCodingRings/.
@@ -13,9 +13,13 @@ if getattr(sys, "frozen", False):
 else:
     CONFIG_FILE = Path(__file__).parent / "config.json"
 
-CLAUDE_DIR = Path.home() / ".claude"
+CLAUDE_DIR   = Path.home() / ".claude"
 HISTORY_FILE = CLAUDE_DIR / "history.jsonl"
 PROJECTS_DIR = CLAUDE_DIR / "projects"
+
+CODEX_DIR    = Path.home() / ".codex"
+GEMINI_DIR   = Path.home() / ".gemini"
+OPENCODE_DIR = Path.home() / ".opencode"
 
 DEFAULT_GOALS = {
     "tokens": 1_000_000,
@@ -30,6 +34,7 @@ class Goals:
     focus_min: int = 120
     tool_calls: int = 50
     lang: str = "en"
+    enabled_agents: list = field(default_factory=lambda: ["claude_code"])
 
 
 def load_config() -> Goals:
@@ -40,7 +45,8 @@ def load_config() -> Goals:
                 tokens=int(data.get("tokens", DEFAULT_GOALS["tokens"])),
                 focus_min=int(data.get("focus_min", DEFAULT_GOALS["focus_min"])),
                 tool_calls=int(data.get("tool_calls", DEFAULT_GOALS["tool_calls"])),
-                lang=str(data.get("lang", "zh")),
+                lang=str(data.get("lang", "en")),
+                enabled_agents=list(data.get("enabled_agents", ["claude_code"])),
             )
         except (json.JSONDecodeError, KeyError, ValueError):
             pass

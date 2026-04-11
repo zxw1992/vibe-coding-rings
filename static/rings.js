@@ -384,6 +384,80 @@ GOAL_CONFIGS.forEach(cfg => {
 });
 
 
+// ── Agent chips ──────────────────────────────────────────────────────────────
+
+const AGENT_COLORS = {
+  claude_code: "#FF375F",
+  codex:       "#10A37F",
+  gemini:      "#4285F4",
+  opencode:    "#8B5CF6",
+};
+
+let _agentsData = [];
+
+function _hexToRgba(hex, alpha) {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+function renderAgentChips() {
+  const container = document.getElementById("agent-chips");
+  container.innerHTML = "";
+  _agentsData.forEach(agent => {
+    const color = AGENT_COLORS[agent.id] || "#8E8E93";
+    const chip = document.createElement("button");
+
+    if (!agent.available) {
+      chip.className = "agent-chip unavailable";
+      chip.disabled = true;
+      chip.title = `${agent.label} not installed (${agent.dir})`;
+    } else if (agent.enabled) {
+      chip.className = "agent-chip enabled";
+      chip.style.borderColor  = color;
+      chip.style.color        = color;
+      chip.style.background   = _hexToRgba(color, 0.12);
+    } else {
+      chip.className = "agent-chip disabled";
+    }
+
+    chip.innerHTML = `<span class="agent-chip-dot"></span>${agent.label}`;
+
+    if (agent.available) {
+      chip.addEventListener("click", async () => {
+        const currentEnabled = _agentsData.filter(a => a.enabled).map(a => a.id);
+        const newEnabled = agent.enabled
+          ? currentEnabled.filter(id => id !== agent.id)
+          : [...currentEnabled, agent.id];
+        if (newEnabled.length === 0) return;   // must keep at least one
+        try {
+          await fetch("/api/agents", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ enabled: newEnabled }),
+          });
+          await loadAgents();
+          await refresh();
+        } catch (e) {
+          console.error("Failed to toggle agent", e);
+        }
+      });
+    }
+    container.appendChild(chip);
+  });
+}
+
+async function loadAgents() {
+  try {
+    _agentsData = await fetch("/api/agents").then(r => r.json());
+    renderAgentChips();
+  } catch (e) {
+    console.error("Failed to load agents", e);
+  }
+}
+
+
 // ── Main refresh ──
 
 async function refresh() {
@@ -403,7 +477,7 @@ async function refresh() {
 }
 
 // Initial load
-setTimeout(refresh, 100);
+setTimeout(() => { loadAgents(); refresh(); }, 100);
 
 // Auto-refresh every 60 seconds
 setInterval(refresh, 60_000);

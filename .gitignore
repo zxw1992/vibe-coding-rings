@@ -21,8 +21,9 @@ devlog/
 build/
 dist/
 
-# Claude Code project instructions (local only)
+# AI assistant project instructions (local only)
 CLAUDE.md
+AGENTS.md
 
 # Personal notes (local only)
 TODO.md

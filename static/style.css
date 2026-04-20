@@ -125,6 +125,15 @@ header {
 .ring-progress:hover { stroke-opacity: 0.8; }
 .ring-glow { filter: drop-shadow(0 0 10px currentColor); }
 
+.ring-tip {
+  transition: opacity 0.4s ease;
+}
+
+.ring-overflow {
+  pointer-events: none;
+  cursor: default;
+}
+
 .rings-date {
   position: absolute;
   top: 50%;

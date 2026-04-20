@@ -40,16 +40,24 @@ applyLang(currentLang, false);
 // ── Ring geometry (main rings) ──
 
 const MAIN_RINGS = [
-  { id: "tokens", svgId: "ring-tokens", r: 120, color: "#FF375F" },
-  { id: "focus",  svgId: "ring-focus",  r: 90,  color: "#30D158" },
-  { id: "tools",  svgId: "ring-tools",  r: 60,  color: "#0A84FF" },
+  { id: "tokens", svgId: "ring-tokens", overId: "ring-tokens-over", tipId: "ring-tokens-tip", r: 120, color: "#FF375F" },
+  { id: "focus",  svgId: "ring-focus",  overId: "ring-focus-over",  tipId: "ring-focus-tip",  r: 90,  color: "#30D158" },
+  { id: "tools",  svgId: "ring-tools",  overId: "ring-tools-over",  tipId: "ring-tools-tip",  r: 60,  color: "#0A84FF" },
 ];
 
 MAIN_RINGS.forEach(ring => {
   ring.circ = 2 * Math.PI * ring.r;
   const el = document.getElementById(ring.svgId);
   el.style.strokeDasharray = ring.circ;
-  el.style.strokeDashoffset = ring.circ; // start empty
+  el.style.strokeDashoffset = ring.circ;
+  const overEl = document.getElementById(ring.overId);
+  overEl.style.transition = "none";           // prevent dashoffset from animating from HTML attr
+  overEl.style.strokeDasharray = ring.circ;
+  overEl.style.strokeDashoffset = ring.circ;
+  requestAnimationFrame(() => {
+    overEl.style.visibility = "visible";      // reveal only after dasharray/offset are set
+    overEl.style.transition = "";             // restore class transitions
+  });
 });
 
 // Mini ring sizes (for history)
@@ -149,14 +157,33 @@ function updateSliderTrack(el) {
 // ── Main ring animation ──
 
 function setRing(ring, pct) {
-  const el = document.getElementById(ring.svgId);
-  const offset = ring.circ * (1 - Math.min(pct, 1.0));
-  requestAnimationFrame(() => { el.style.strokeDashoffset = offset; });
+  const el     = document.getElementById(ring.svgId);
+  const overEl = document.getElementById(ring.overId);
+  const tipEl  = document.getElementById(ring.tipId);
+
+  const mainPct = Math.min(pct, 1.0);
+  const overPct = pct > 1.0 ? Math.min(pct - 1.0, 1.0) : 0;
+
+  requestAnimationFrame(() => {
+    el.style.strokeDashoffset    = ring.circ * (1 - mainPct);
+    overEl.style.strokeDashoffset = ring.circ * (1 - overPct);
+  });
+
+  // Tip tracks the leading edge: overflow arc when lapping, main arc otherwise
+  const tipPct = pct > 1.0 ? overPct : mainPct;
+  const angle  = 2 * Math.PI * tipPct;
+  tipEl.setAttribute("cx", (140 + ring.r * Math.cos(angle)).toFixed(2));
+  tipEl.setAttribute("cy", (140 + ring.r * Math.sin(angle)).toFixed(2));
+  tipEl.style.opacity = mainPct > 0.02 ? "1" : "0";
+
   if (pct >= 1.0) {
     el.classList.add("ring-glow");
     el.style.color = ring.color;
+    overEl.classList.add("ring-glow");
+    overEl.style.color = ring.color;
   } else {
     el.classList.remove("ring-glow");
+    overEl.classList.remove("ring-glow");
   }
 }
 

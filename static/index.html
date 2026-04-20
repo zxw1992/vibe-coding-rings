@@ -27,6 +27,11 @@
 <div class="main-card">
   <div class="rings-container">
     <svg class="rings-svg" viewBox="0 0 280 280" id="rings-svg">
+      <defs>
+        <filter id="tip-shadow" x="-100%" y="-100%" width="300%" height="300%">
+          <feDropShadow dx="0" dy="0" stdDeviation="4" flood-color="#000000" flood-opacity="0.65"/>
+        </filter>
+      </defs>
       <!-- Tracks -->
       <circle class="ring-track" cx="140" cy="140" r="120" stroke="#FF375F" stroke-opacity="0.15" stroke-width="18"/>
       <circle class="ring-track" cx="140" cy="140" r="90"  stroke="#30D158" stroke-opacity="0.15" stroke-width="18"/>
@@ -38,6 +43,17 @@
               data-ring="focus" />
       <circle id="ring-tools"   class="ring-progress" cx="140" cy="140" r="60"  stroke="#0A84FF" stroke-width="18"
               data-ring="tools" />
+      <!-- Overflow arcs (second lap when pct > 100%) — hidden until JS initializes -->
+      <circle id="ring-tokens-over" class="ring-progress ring-overflow" cx="140" cy="140" r="120"
+              stroke="#FF375F" stroke-width="18" visibility="hidden"/>
+      <circle id="ring-focus-over"  class="ring-progress ring-overflow" cx="140" cy="140" r="90"
+              stroke="#30D158" stroke-width="18" visibility="hidden"/>
+      <circle id="ring-tools-over"  class="ring-progress ring-overflow" cx="140" cy="140" r="60"
+              stroke="#0A84FF" stroke-width="18" visibility="hidden"/>
+      <!-- Tip circles: sit on the arc's leading end, shadow creates Apple-style depth -->
+      <circle id="ring-tokens-tip" class="ring-tip" cx="260" cy="140" r="9"  fill="#FF375F" filter="url(#tip-shadow)" opacity="0"/>
+      <circle id="ring-focus-tip"  class="ring-tip" cx="230" cy="140" r="9"  fill="#30D158" filter="url(#tip-shadow)" opacity="0"/>
+      <circle id="ring-tools-tip"  class="ring-tip" cx="200" cy="140" r="9"  fill="#0A84FF" filter="url(#tip-shadow)" opacity="0"/>
     </svg>
     <div class="rings-date">
       <div class="month" id="date-month">APR</div>

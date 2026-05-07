@@ -96,6 +96,23 @@ def calc_streak(history: list[DayMetrics]) -> int:
     return streak
 
 
+def collect_agent_breakdown(target: date, goals: Goals) -> list[dict]:
+    """Returns per-agent tokens/tool_calls/focus_min for the given date."""
+    result = []
+    for kid, p in _PROVIDERS.items():
+        if kid not in goals.enabled_agents or not p.is_available():
+            continue
+        t, tc = p.collect_tokens_and_tools(target)
+        fm = p.collect_focus_minutes(target)
+        result.append({
+            "id": kid,
+            "tokens": t,
+            "tool_calls": tc,
+            "focus_min": round(fm, 1),
+        })
+    return result
+
+
 def collect_hourly(target: date, goals: Goals) -> dict[str, list]:
     """
     Returns 24-bucket arrays keyed by LOCAL hour for tokens, tool_calls,

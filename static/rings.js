@@ -225,6 +225,12 @@ function updateToday(data) {
 
   // Sync goal inputs
   syncGoalInputs(goals);
+
+  // Agent breakdown (only shown when 2+ agents have data for a metric)
+  const bd = data.breakdown || [];
+  renderBreakdown("tokens-breakdown", bd, "tokens");
+  renderBreakdown("focus-breakdown",  bd, "focus_min");
+  renderBreakdown("tools-breakdown",  bd, "tool_calls");
 }
 
 // ── Main ring hover tooltips ──
@@ -422,6 +428,46 @@ const AGENT_COLORS = {
   gemini:      "#4285F4",
   opencode:    "#8B5CF6",
 };
+
+const AGENT_SHORT = {
+  claude_code: "Claude",
+  codex:       "Codex",
+  gemini:      "Gemini",
+  opencode:    "OpenCode",
+};
+
+const BREAKDOWN_FMT = {
+  tokens:     fmtTokens,
+  focus_min:  v => Math.round(v) + " min",
+  tool_calls: v => String(v),
+};
+
+function renderBreakdown(containerId, breakdown, field) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  const active = breakdown.filter(a => a[field] > 0);
+  if (active.length < 2) { el.innerHTML = ""; return; }
+  const total = active.reduce((s, a) => s + a[field], 0);
+  const fmt = BREAKDOWN_FMT[field];
+  el.innerHTML =
+    '<div class="breakdown-bar">' +
+    active.map(a => {
+      const pct = (a[field] / total * 100).toFixed(1);
+      const color = AGENT_COLORS[a.id] || "#8E8E93";
+      return `<div class="breakdown-seg" style="width:${pct}%;background:${color}"></div>`;
+    }).join("") +
+    '</div>' +
+    '<div class="breakdown-labels">' +
+    active.map(a => {
+      const color = AGENT_COLORS[a.id] || "#8E8E93";
+      const name = AGENT_SHORT[a.id] || a.label;
+      return `<span class="breakdown-label">` +
+        `<span class="breakdown-dot" style="background:${color}"></span>` +
+        `${name} ${fmt(a[field])}` +
+        `</span>`;
+    }).join("") +
+    '</div>';
+}
 
 let _agentsData = [];
 

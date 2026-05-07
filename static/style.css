@@ -208,6 +208,45 @@ header {
   white-space: nowrap;
 }
 
+/* ── Agent breakdown (under each ring-stat) ── */
+.agent-breakdown { margin-top: 6px; }
+
+.breakdown-bar {
+  display: flex;
+  height: 3px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: var(--bg);
+  gap: 1px;
+  margin-bottom: 5px;
+}
+
+.breakdown-seg {
+  height: 100%;
+  min-width: 2px;
+}
+
+.breakdown-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 10px;
+}
+
+.breakdown-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.breakdown-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
 /* ── History card with mini rings ── */
 .history-card {
   background: var(--surface);

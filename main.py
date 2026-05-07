@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from config import Goals, load_config, save_config
-from data_collector import collect_day_metrics, collect_history, calc_streak, collect_hourly, _PROVIDERS
+from data_collector import collect_day_metrics, collect_history, calc_streak, collect_hourly, collect_agent_breakdown, _PROVIDERS
 
 # When running as a py2app bundle, Resources/ is two levels above the binary.
 if getattr(sys, "frozen", False):
@@ -62,6 +62,9 @@ def api_today():
     metrics = collect_day_metrics(today, goals)
     history = collect_history(goals, days=7)
     streak = calc_streak(history)
+    breakdown = collect_agent_breakdown(today, goals)
+    for item in breakdown:
+        item["label"] = AGENT_META.get(item["id"], {}).get("label", item["id"])
     return {
         "metrics": {
             "date": metrics.date,
@@ -78,6 +81,7 @@ def api_today():
             "focus_min": goals.focus_min,
             "tool_calls": goals.tool_calls,
         },
+        "breakdown": breakdown,
     }
 
 

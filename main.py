@@ -5,7 +5,7 @@ import sys
 import threading
 import time
 import webbrowser
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import uvicorn
@@ -198,6 +198,122 @@ def api_hourly(metric: str = "tokens", d: str = ""):
         "hourly": hourly_data[metric],
         "total": total_map[metric],
         "goal": goal_map[metric],
+    }
+
+
+@app.get("/api/weekly")
+def api_weekly():
+    """
+    Weekly recap: this-week-so-far totals + same-period last week comparison,
+    best day per metric, most active hour, per-agent breakdown, streak.
+    Week is Mon-Sun in local time (today.weekday() == 0 for Monday).
+    """
+    goals = load_config()
+    today = date.today()
+    this_mon = today - timedelta(days=today.weekday())
+    last_mon = this_mon - timedelta(days=7)
+
+    days_so_far = (today - this_mon).days + 1
+    this_days = [this_mon + timedelta(days=i) for i in range(days_so_far)]
+    # Same-weekday slice of last week for like-for-like delta
+    prev_days = [last_mon + timedelta(days=i) for i in range(days_so_far)]
+
+    this_metrics = [collect_day_metrics(d, goals) for d in this_days]
+    prev_metrics = [collect_day_metrics(d, goals) for d in prev_days]
+
+    totals = {
+        "tokens":     sum(m.tokens     for m in this_metrics),
+        "tool_calls": sum(m.tool_calls for m in this_metrics),
+        "focus_min":  round(sum(m.focus_min for m in this_metrics), 1),
+    }
+    prev_totals = {
+        "tokens":     sum(m.tokens     for m in prev_metrics),
+        "tool_calls": sum(m.tool_calls for m in prev_metrics),
+        "focus_min":  round(sum(m.focus_min for m in prev_metrics), 1),
+    }
+
+    def _delta(curr, prev):
+        if prev <= 0:
+            return None
+        return round((curr - prev) / prev, 4)
+
+    deltas = {
+        "tokens":     _delta(totals["tokens"],     prev_totals["tokens"]),
+        "tool_calls": _delta(totals["tool_calls"], prev_totals["tool_calls"]),
+        "focus_min":  _delta(totals["focus_min"],  prev_totals["focus_min"]),
+    }
+
+    def _best(metric_key):
+        if not this_metrics:
+            return None
+        best = max(this_metrics, key=lambda m: getattr(m, metric_key))
+        val = getattr(best, metric_key)
+        if val <= 0:
+            return None
+        return {"date": best.date, "value": val}
+
+    best_days = {
+        "tokens":     _best("tokens"),
+        "focus_min":  _best("focus_min"),
+        "tool_calls": _best("tool_calls"),
+    }
+
+    # Most active hour: aggregate hourly tokens across the week
+    hour_sum = [0] * 24
+    for d in this_days:
+        h = collect_hourly(d, goals)
+        for i in range(24):
+            hour_sum[i] += h["tokens"][i]
+    most_active_hour = max(range(24), key=lambda i: hour_sum[i]) if any(hour_sum) else None
+
+    # Per-agent totals for the week
+    agent_acc: dict[str, dict] = {}
+    for d in this_days:
+        for item in collect_agent_breakdown(d, goals):
+            acc = agent_acc.setdefault(item["id"], {
+                "id": item["id"],
+                "label": AGENT_META.get(item["id"], {}).get("label", item["id"]),
+                "tokens": 0,
+                "tool_calls": 0,
+                "focus_min": 0.0,
+            })
+            acc["tokens"]     += item["tokens"]
+            acc["tool_calls"] += item["tool_calls"]
+            acc["focus_min"]  += item["focus_min"]
+    for acc in agent_acc.values():
+        acc["focus_min"] = round(acc["focus_min"], 1)
+    breakdown = sorted(agent_acc.values(), key=lambda x: -x["tokens"])
+
+    streak = calc_streak(collect_history(goals, days=7))
+
+    return {
+        "week_start":         this_mon.isoformat(),
+        "week_end_so_far":    today.isoformat(),
+        "days_so_far":        days_so_far,
+        "totals":             totals,
+        "prev_totals":        prev_totals,
+        "deltas":             deltas,
+        "best_days":          best_days,
+        "most_active_hour":   most_active_hour,
+        "breakdown":          breakdown,
+        "streak":             streak,
+        "goals": {
+            "tokens":     goals.tokens,
+            "focus_min":  goals.focus_min,
+            "tool_calls": goals.tool_calls,
+        },
+        "days": [
+            {
+                "date":       m.date,
+                "tokens":     m.tokens,
+                "tool_calls": m.tool_calls,
+                "focus_min":  m.focus_min,
+                "token_pct":  round(m.token_pct, 4),
+                "tool_pct":   round(m.tool_pct, 4),
+                "focus_pct":  round(m.focus_pct, 4),
+            }
+            for m in this_metrics
+        ],
     }
 
 

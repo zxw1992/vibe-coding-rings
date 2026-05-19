@@ -884,7 +884,277 @@ document.addEventListener("keydown", e => {
   if (e.key !== "Escape") return;
   if (_currentDetailMetric) hideDetailPage();
   else if (_currentDateDetail) hideDateDetailPage();
+  else if (_weeklyOpen) hideWeeklyPage();
 });
+
+
+// ═══════════════════════════════════════════════════
+// ── Weekly recap page ──
+// ═══════════════════════════════════════════════════
+
+let _weeklyOpen = false;
+
+async function showWeeklyPage() {
+  _weeklyOpen = true;
+  const page = document.getElementById("page-weekly");
+  page.classList.add("visible");
+  page.setAttribute("aria-hidden", "false");
+  document.body.style.overflow = "hidden";
+  page.querySelectorAll(".zh").forEach(el => { el.style.display = currentLang === "zh" ? "" : "none"; });
+  page.querySelectorAll(".en").forEach(el => { el.style.display = currentLang === "en" ? "" : "none"; });
+
+  // Loading state
+  document.getElementById("weekly-range").textContent = currentLang === "zh" ? "加载中…" : "Loading…";
+  document.getElementById("weekly-hero").innerHTML = "";
+  document.getElementById("weekly-awards").innerHTML = "";
+  document.getElementById("weekly-breakdown").innerHTML = "";
+
+  try {
+    const r = await fetch("/api/weekly");
+    if (!r.ok) throw new Error("weekly fetch failed");
+    renderWeekly(await r.json());
+  } catch (e) {
+    document.getElementById("weekly-range").textContent =
+      currentLang === "zh" ? "加载失败" : "Failed to load";
+    console.error(e);
+  }
+}
+
+function hideWeeklyPage() {
+  const page = document.getElementById("page-weekly");
+  page.classList.remove("visible");
+  page.setAttribute("aria-hidden", "true");
+  document.body.style.overflow = "";
+  _weeklyOpen = false;
+}
+
+function _fmtFocusMin(v) {
+  if (v >= 60) {
+    const h = Math.floor(v / 60);
+    const m = Math.round(v - h * 60);
+    return currentLang === "zh" ? `${h}小时${m}分` : `${h}h ${m}m`;
+  }
+  return Math.round(v) + (currentLang === "zh" ? "分钟" : " min");
+}
+
+function _fmtDelta(d) {
+  if (d === null || d === undefined) {
+    return { text: currentLang === "zh" ? "首周" : "first week", cls: "flat" };
+  }
+  const pct = Math.round(Math.abs(d) * 100);
+  if (pct < 1)      return { text: currentLang === "zh" ? "持平" : "flat", cls: "flat" };
+  if (d > 0)        return { text: `↑ ${pct}%`,                            cls: "up" };
+  return                   { text: `↓ ${pct}%`,                            cls: "down" };
+}
+
+function _fmtWeekRange(startISO, endISO) {
+  const s = new Date(startISO + "T12:00:00");
+  const e = new Date(endISO   + "T12:00:00");
+  if (currentLang === "zh") {
+    const sFmt = `${s.getMonth() + 1}月${s.getDate()}日`;
+    const eFmt = `${e.getMonth() + 1}月${e.getDate()}日`;
+    return `${sFmt} – ${eFmt}`;
+  }
+  const opts = { month: "short", day: "numeric" };
+  return `${s.toLocaleDateString("en-US", opts)} – ${e.toLocaleDateString("en-US", opts)}`;
+}
+
+function _fmtBestDayDate(isoDate) {
+  const d = new Date(isoDate + "T12:00:00");
+  return currentLang === "zh"
+    ? d.toLocaleDateString("zh-CN", { month: "short", day: "numeric", weekday: "short" })
+    : d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+}
+
+function _fmtHourRange(h) {
+  const next = (h + 1) % 24;
+  const pad = n => String(n).padStart(2, "0");
+  return `${pad(h)}:00 – ${pad(next)}:00`;
+}
+
+function renderWeekly(data) {
+  const zh = currentLang === "zh";
+
+  // ─── Week range + subtitle ───
+  document.getElementById("weekly-range").textContent =
+    _fmtWeekRange(data.week_start, data.week_end_so_far);
+  document.getElementById("weekly-subtitle").textContent =
+    zh ? `本周已过 ${data.days_so_far} / 7 天`
+       : `${data.days_so_far} of 7 days so far`;
+
+  // ─── Hero numbers ───
+  const heroDefs = [
+    { metric: "tokens",     name_zh: "消耗", name_en: "Consume", color: "#FF375F", fmt: fmtTokens },
+    { metric: "focus_min",  name_zh: "专注", name_en: "Focus",   color: "#30D158", fmt: _fmtFocusMin },
+    { metric: "tool_calls", name_zh: "行动", name_en: "Action",  color: "#0A84FF", fmt: v => v + (zh ? " 次" : " calls") },
+  ];
+
+  const hero = document.getElementById("weekly-hero");
+  hero.innerHTML = "";
+  heroDefs.forEach((d, i) => {
+    const val = data.totals[d.metric];
+    const delta = _fmtDelta(data.deltas[d.metric]);
+    const card = document.createElement("div");
+    card.className = "weekly-hero-card";
+    card.style.opacity = "0";
+    card.style.transform = "translateY(10px)";
+    card.innerHTML =
+      `<div class="weekly-hero-name" style="color:${d.color}">${zh ? d.name_zh : d.name_en}</div>` +
+      `<div class="weekly-hero-value">${d.fmt(val)}</div>` +
+      `<div class="weekly-hero-delta ${delta.cls}">${delta.text}` +
+      (data.deltas[d.metric] !== null
+        ? `<span class="weekly-hero-delta-note">${zh ? "对比上周同期" : "vs last week"}</span>`
+        : "") +
+      `</div>`;
+    hero.appendChild(card);
+    setTimeout(() => {
+      card.style.transition = "opacity 0.55s ease, transform 0.55s cubic-bezier(0.4,0,0.2,1)";
+      card.style.opacity = "1";
+      card.style.transform = "translateY(0)";
+    }, 80 + i * 100);
+  });
+
+  // ─── Awards ───
+  const awards = document.getElementById("weekly-awards");
+  awards.innerHTML = "";
+  const awardList = [];
+
+  if (data.best_days.tokens) {
+    awardList.push({
+      label_zh: "Token 最高日", label_en: "Top Token Day",
+      icon: "🏆",
+      value: `${_fmtBestDayDate(data.best_days.tokens.date)} · ${fmtTokens(data.best_days.tokens.value)}`,
+    });
+  }
+  if (data.best_days.focus_min) {
+    awardList.push({
+      label_zh: "最专注日", label_en: "Most Focused Day",
+      icon: "🎯",
+      value: `${_fmtBestDayDate(data.best_days.focus_min.date)} · ${_fmtFocusMin(data.best_days.focus_min.value)}`,
+    });
+  }
+  if (data.most_active_hour !== null) {
+    awardList.push({
+      label_zh: "最活跃时段", label_en: "Most Active Hour",
+      icon: "⚡",
+      value: _fmtHourRange(data.most_active_hour),
+    });
+  }
+  if (data.streak > 0) {
+    awardList.push({
+      label_zh: "达标连续", label_en: "Goal Streak",
+      icon: "🔥",
+      value: zh ? `${data.streak} 天` : `${data.streak} day${data.streak > 1 ? "s" : ""}`,
+    });
+  }
+  awardList.forEach((a, i) => {
+    const el = document.createElement("div");
+    el.className = "weekly-award";
+    el.style.opacity = "0";
+    el.style.transform = "translateY(10px)";
+    el.innerHTML =
+      `<div class="weekly-award-label">${zh ? a.label_zh : a.label_en}</div>` +
+      `<div class="weekly-award-value"><span class="weekly-award-icon">${a.icon}</span>${a.value}</div>`;
+    awards.appendChild(el);
+    setTimeout(() => {
+      el.style.transition = "opacity 0.55s ease, transform 0.55s cubic-bezier(0.4,0,0.2,1)";
+      el.style.opacity = "1";
+      el.style.transform = "translateY(0)";
+    }, 320 + i * 80);
+  });
+
+  // ─── This week by day (mini rings strip) ───
+  const dayStrip = document.getElementById("weekly-day-strip");
+  dayStrip.innerHTML = "";
+  const WEEKDAY_ZH = ["一", "二", "三", "四", "五", "六", "日"];
+  const WEEKDAY_EN = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  // Render 7 slots; fill present days, gray-out future days
+  for (let i = 0; i < 7; i++) {
+    const dayDate = new Date(data.week_start + "T12:00:00");
+    dayDate.setDate(dayDate.getDate() + i);
+    const iso = dayDate.toLocaleDateString("en-CA");
+    const found = data.days.find(d => d.date === iso);
+    const labelText = zh ? `周${WEEKDAY_ZH[i]}` : WEEKDAY_EN[i];
+
+    const col = document.createElement("div");
+    col.className = "weekly-day-col";
+
+    if (found) {
+      col.innerHTML = buildMiniSVG(found);
+      const isTodayFlag = isToday(iso);
+      const lbl = document.createElement("div");
+      lbl.className = "weekly-day-label" + (isTodayFlag ? " today" : "");
+      lbl.textContent = isTodayFlag ? (zh ? "今日" : "Today") : labelText;
+      col.appendChild(lbl);
+      col.style.cursor = "pointer";
+      col.addEventListener("click", () => {
+        hideWeeklyPage();
+        setTimeout(() => showDateDetailPage(iso), 320);
+      });
+    } else {
+      col.classList.add("future");
+      col.innerHTML =
+        `<svg class="history-day-svg" width="${MINI.size}" height="${MINI.size}" viewBox="0 0 ${MINI.size} ${MINI.size}">` +
+        MINI.r.map((r, j) =>
+          `<circle cx="${MINI.size / 2}" cy="${MINI.size / 2}" r="${r}" stroke="#3A3A3C" stroke-opacity="0.4" stroke-width="${MINI.stroke}" fill="none"/>`
+        ).join("") +
+        `</svg>`;
+      const lbl = document.createElement("div");
+      lbl.className = "weekly-day-label future";
+      lbl.textContent = labelText;
+      col.appendChild(lbl);
+    }
+    dayStrip.appendChild(col);
+  }
+  // Animate the strip arcs from offset to final positions
+  requestAnimationFrame(() => {
+    dayStrip.querySelectorAll(".mini-ring-progress").forEach(arc => {
+      setTimeout(() => {
+        arc.style.transition = "stroke-dashoffset 0.9s cubic-bezier(0.4,0,0.2,1)";
+        arc.style.strokeDashoffset = arc.getAttribute("data-offset");
+      }, 500);
+    });
+  });
+
+  // ─── Agent breakdown ───
+  const breakdown = document.getElementById("weekly-breakdown");
+  breakdown.innerHTML = "";
+  const activeAgents = data.breakdown.filter(a => a.tokens > 0 || a.tool_calls > 0 || a.focus_min > 0);
+  const maxTokens = Math.max(1, ...activeAgents.map(a => a.tokens));
+  if (activeAgents.length === 0) {
+    breakdown.innerHTML = `<div class="weekly-empty">${zh ? "本周暂无数据" : "No data this week yet"}</div>`;
+  } else {
+    activeAgents.forEach((a, i) => {
+      const widthPct = (a.tokens / maxTokens) * 100;
+      const color = AGENT_COLORS[a.id] || "#8E8E93";
+      const row = document.createElement("div");
+      row.className = "weekly-agent-row";
+      row.innerHTML =
+        `<div class="weekly-agent-name">` +
+          `<span class="weekly-agent-dot" style="background:${color}"></span>${a.label}` +
+        `</div>` +
+        `<div class="weekly-agent-bar"><div class="weekly-agent-bar-fill" style="width:0;background:${color}"></div></div>` +
+        `<div class="weekly-agent-tokens">${fmtTokens(a.tokens)}</div>`;
+      breakdown.appendChild(row);
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          row.querySelector(".weekly-agent-bar-fill").style.width = widthPct + "%";
+        }, 600 + i * 100);
+      });
+    });
+  }
+}
+
+// Trigger button + Sunday/Monday hint dot
+document.getElementById("weekly-btn").addEventListener("click", showWeeklyPage);
+document.getElementById("weekly-back").addEventListener("click", hideWeeklyPage);
+
+(function maybeShowWeeklyDot() {
+  const dow = new Date().getDay();   // 0 = Sun, 1 = Mon
+  if (dow === 0 || dow === 1) {
+    document.getElementById("weekly-dot").hidden = false;
+  }
+})();
 
 // ── Hash-based deep-link navigation ──────────────────────────────────────────
 // menubar.py opens "http://localhost:8765/#detail=tokens" to navigate directly

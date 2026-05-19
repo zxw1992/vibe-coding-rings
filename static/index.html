@@ -117,9 +117,16 @@
 
 <!-- 7-day history with mini rings -->
 <div class="history-card">
-  <div class="section-title">
-    <span class="zh">7日历史</span>
-    <span class="en" style="display:none">7-Day History</span>
+  <div class="section-title section-title-row">
+    <span>
+      <span class="zh">7日历史</span>
+      <span class="en" style="display:none">7-Day History</span>
+    </span>
+    <button id="weekly-btn" class="weekly-trigger" title="本周回顾 / Weekly Recap">
+      <span class="zh">本周回顾</span>
+      <span class="en" style="display:none">Weekly Recap</span>
+      <span class="weekly-dot" id="weekly-dot" hidden></span>
+    </button>
   </div>
   <div class="history-rings" id="history-rings">
     <!-- filled by JS -->
@@ -262,6 +269,50 @@
   </div>
   <div id="date-detail-sections" class="date-detail-sections">
     <!-- filled by JS -->
+  </div>
+</div>
+
+<!-- ── Weekly recap page overlay ── -->
+<div id="page-weekly" class="detail-page" aria-hidden="true">
+  <div class="detail-header">
+    <button class="back-btn" id="weekly-back">
+      <svg width="9" height="15" viewBox="0 0 9 15" fill="none">
+        <path d="M7.5 1.5L2 7.5L7.5 13.5" stroke="currentColor" stroke-width="2.2"
+              stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span class="zh">返回</span><span class="en" style="display:none">Back</span>
+    </button>
+    <div class="weekly-page-title">
+      <span class="zh">本周回顾</span>
+      <span class="en" style="display:none">Weekly Recap</span>
+    </div>
+  </div>
+
+  <div id="weekly-range" class="weekly-range">—</div>
+  <div id="weekly-subtitle" class="weekly-subtitle">—</div>
+
+  <div id="weekly-hero" class="weekly-hero">
+    <!-- 3 metric cards filled by JS -->
+  </div>
+
+  <div id="weekly-awards" class="weekly-awards">
+    <!-- Best day / most active hour / streak badges filled by JS -->
+  </div>
+
+  <div class="weekly-card">
+    <div class="weekly-section-title">
+      <span class="zh">本周每日</span>
+      <span class="en" style="display:none">This Week by Day</span>
+    </div>
+    <div id="weekly-day-strip" class="weekly-day-strip"></div>
+  </div>
+
+  <div class="weekly-card">
+    <div class="weekly-section-title">
+      <span class="zh">各 AI 工具贡献</span>
+      <span class="en" style="display:none">By Agent</span>
+    </div>
+    <div id="weekly-breakdown" class="weekly-breakdown"></div>
   </div>
 </div>
 

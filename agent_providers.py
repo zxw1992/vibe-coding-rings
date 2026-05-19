@@ -141,31 +141,43 @@ class AgentProvider(ABC):
     def collect_hourly(self, target: date) -> dict[str, list]: ...
 
 
-# ── Claude Code provider ──────────────────────────────────────────────────────
+# ── Anthropic-style provider base (Claude Code, OpenCode) ────────────────────
 
-class ClaudeCodeProvider(AgentProvider):
+class AnthropicStyleProvider(AgentProvider):
+    """
+    Shared base for providers consuming Anthropic API-shaped JSONL:
+      - assistant entries: {type: "assistant", timestamp, message: {usage, content}}
+      - usage fields:      input_tokens, cache_read_input_tokens, cache_creation_input_tokens
+      - tool calls:        message.content[].type == "tool_use"
+
+    Subclasses set: session_dir, history_file, filter_slashcmds.
+    """
+
+    session_dir: Path                 # overridden by subclass
+    history_file: Path                # overridden by subclass
+    filter_slashcmds: bool = False    # overridden if needed
 
     def is_available(self) -> bool:
-        return CLAUDE_DIR.exists()
+        return self.session_dir.exists()
 
-    def _mtime_bounds(self, start_ms: int, end_ms: int) -> tuple[float, float]:
-        return (start_ms / 1000) - 2 * 86_400, (end_ms / 1000) + 2 * 86_400
-
-    def collect_tokens_and_tools(self, target: date) -> tuple[int, int]:
-        start_ms, end_ms = _local_date_to_utc_ms_range(target)
-        tokens = 0
-        tool_calls = 0
-        if not PROJECTS_DIR.exists():
-            return tokens, tool_calls
-        mtime_lo, mtime_hi = self._mtime_bounds(start_ms, end_ms)
-        for session_file in PROJECTS_DIR.rglob("*.jsonl"):
+    def _iter_session_files(self, start_ms: int, end_ms: int):
+        if not self.session_dir.exists():
+            return
+        mtime_lo = (start_ms / 1000) - 2 * 86_400
+        mtime_hi = (end_ms / 1000) + 2 * 86_400
+        for f in self.session_dir.rglob("*.jsonl"):
             try:
-                if not (mtime_lo <= session_file.stat().st_mtime <= mtime_hi):
-                    continue
+                if mtime_lo <= f.stat().st_mtime <= mtime_hi:
+                    yield f
             except OSError:
                 continue
+
+    def _iter_assistant_entries(self, target: date):
+        """Yield (hour, usage_dict, tool_count) for each in-range assistant entry."""
+        start_ms, end_ms = _local_date_to_utc_ms_range(target)
+        for f in self._iter_session_files(start_ms, end_ms):
             try:
-                for raw_line in session_file.read_text(errors="ignore").splitlines():
+                for raw_line in f.read_text(errors="ignore").splitlines():
                     if not raw_line.strip():
                         continue
                     try:
@@ -180,68 +192,66 @@ class ClaudeCodeProvider(AgentProvider):
                         continue
                     if entry.get("type") != "assistant":
                         continue
-                    msg   = entry.get("message", {})
+                    msg = entry.get("message", {})
                     usage = msg.get("usage", {})
-                    tokens += (
-                        usage.get("input_tokens", 0)
-                        + usage.get("cache_read_input_tokens", 0)
-                        + usage.get("cache_creation_input_tokens", 0)
+                    tool_count = sum(
+                        1 for b in msg.get("content", [])
+                        if isinstance(b, dict) and b.get("type") == "tool_use"
                     )
-                    for block in msg.get("content", []):
-                        if isinstance(block, dict) and block.get("type") == "tool_use":
-                            tool_calls += 1
+                    yield _ms_to_local_hour(ts_ms), usage, tool_count
             except OSError:
                 continue
+
+    @staticmethod
+    def _sum_tokens(usage: dict) -> int:
+        return (
+            usage.get("input_tokens", 0)
+            + usage.get("cache_read_input_tokens", 0)
+            + usage.get("cache_creation_input_tokens", 0)
+        )
+
+    def collect_tokens_and_tools(self, target: date) -> tuple[int, int]:
+        tokens = 0
+        tool_calls = 0
+        for _hour, usage, tc in self._iter_assistant_entries(target):
+            tokens     += self._sum_tokens(usage)
+            tool_calls += tc
         return tokens, tool_calls
 
     def collect_focus_minutes(self, target: date) -> float:
         start_ms, end_ms = _local_date_to_utc_ms_range(target)
-        sessions = _read_history_sessions(HISTORY_FILE, start_ms, end_ms, filter_slashcmds=True)
+        sessions = _read_history_sessions(
+            self.history_file, start_ms, end_ms,
+            filter_slashcmds=self.filter_slashcmds,
+        )
         return _focus_from_sessions(sessions, start_ms, end_ms)
 
     def collect_hourly(self, target: date) -> dict[str, list]:
         start_ms, end_ms = _local_date_to_utc_ms_range(target)
         tokens_h = [0] * 24
         tools_h  = [0] * 24
-
-        if PROJECTS_DIR.exists():
-            mtime_lo, mtime_hi = self._mtime_bounds(start_ms, end_ms)
-            for session_file in PROJECTS_DIR.rglob("*.jsonl"):
-                try:
-                    if not (mtime_lo <= session_file.stat().st_mtime <= mtime_hi):
-                        continue
-                    for raw_line in session_file.read_text(errors="ignore").splitlines():
-                        if not raw_line.strip():
-                            continue
-                        try:
-                            entry = json.loads(raw_line)
-                        except json.JSONDecodeError:
-                            continue
-                        ts_raw = entry.get("timestamp", "")
-                        if not isinstance(ts_raw, str):
-                            continue
-                        ts_ms = _iso_to_ms(ts_raw)
-                        if ts_ms is None or not (start_ms <= ts_ms < end_ms):
-                            continue
-                        if entry.get("type") != "assistant":
-                            continue
-                        hour  = _ms_to_local_hour(ts_ms)
-                        msg   = entry.get("message", {})
-                        usage = msg.get("usage", {})
-                        tokens_h[hour] += (
-                            usage.get("input_tokens", 0)
-                            + usage.get("cache_read_input_tokens", 0)
-                            + usage.get("cache_creation_input_tokens", 0)
-                        )
-                        for block in msg.get("content", []):
-                            if isinstance(block, dict) and block.get("type") == "tool_use":
-                                tools_h[hour] += 1
-                except OSError:
-                    continue
-
-        sessions = _read_history_sessions(HISTORY_FILE, start_ms, end_ms, filter_slashcmds=True)
-        focus_h  = _focus_hourly_from_sessions(sessions, start_ms, end_ms)
+        for hour, usage, tc in self._iter_assistant_entries(target):
+            tokens_h[hour] += self._sum_tokens(usage)
+            tools_h[hour]  += tc
+        sessions = _read_history_sessions(
+            self.history_file, start_ms, end_ms,
+            filter_slashcmds=self.filter_slashcmds,
+        )
+        focus_h = _focus_hourly_from_sessions(sessions, start_ms, end_ms)
         return {"tokens": tokens_h, "tools": tools_h, "focus": focus_h}
+
+
+# ── Claude Code provider ──────────────────────────────────────────────────────
+
+class ClaudeCodeProvider(AnthropicStyleProvider):
+    session_dir = PROJECTS_DIR
+    history_file = HISTORY_FILE
+    filter_slashcmds = True
+
+    def is_available(self) -> bool:
+        # Claude considers itself installed if ~/.claude exists, even if
+        # ~/.claude/projects/ hasn't been created yet (no sessions run).
+        return CLAUDE_DIR.exists()
 
 
 # ── Codex provider ────────────────────────────────────────────────────────────
@@ -515,99 +525,8 @@ class GeminiProvider(AgentProvider):
 
 # ── OpenCode provider ─────────────────────────────────────────────────────────
 
-class OpenCodeProvider(AgentProvider):
-    """
-    Best-effort provider for OpenCode (SST, opencode.ai) (~/.opencode/).
-    OpenCode proxies the Anthropic API and uses an identical JSONL schema.
-    """
-
-    def is_available(self) -> bool:
-        return OPENCODE_DIR.exists()
-
-    def _iter_session_files(self, start_ms: int, end_ms: int):
-        mtime_lo = (start_ms / 1000) - 2 * 86_400
-        mtime_hi = (end_ms / 1000) + 2 * 86_400
-        for f in OPENCODE_DIR.rglob("*.jsonl"):
-            try:
-                if mtime_lo <= f.stat().st_mtime <= mtime_hi:
-                    yield f
-            except OSError:
-                continue
-
-    def collect_tokens_and_tools(self, target: date) -> tuple[int, int]:
-        start_ms, end_ms = _local_date_to_utc_ms_range(target)
-        tokens = 0
-        tool_calls = 0
-        for f in self._iter_session_files(start_ms, end_ms):
-            try:
-                for raw_line in f.read_text(errors="ignore").splitlines():
-                    if not raw_line.strip():
-                        continue
-                    try:
-                        entry = json.loads(raw_line)
-                    except json.JSONDecodeError:
-                        continue
-                    ts_raw = entry.get("timestamp", "")
-                    if not isinstance(ts_raw, str):
-                        continue
-                    ts_ms = _iso_to_ms(ts_raw)
-                    if ts_ms is None or not (start_ms <= ts_ms < end_ms):
-                        continue
-                    if entry.get("type") != "assistant":
-                        continue
-                    msg   = entry.get("message", {})
-                    usage = msg.get("usage", {})
-                    tokens += (
-                        usage.get("input_tokens", 0)
-                        + usage.get("cache_read_input_tokens", 0)
-                        + usage.get("cache_creation_input_tokens", 0)
-                    )
-                    for block in msg.get("content", []):
-                        if isinstance(block, dict) and block.get("type") == "tool_use":
-                            tool_calls += 1
-            except OSError:
-                continue
-        return tokens, tool_calls
-
-    def collect_focus_minutes(self, target: date) -> float:
-        start_ms, end_ms = _local_date_to_utc_ms_range(target)
-        sessions = _read_history_sessions(OPENCODE_DIR / "history.jsonl", start_ms, end_ms)
-        return _focus_from_sessions(sessions, start_ms, end_ms)
-
-    def collect_hourly(self, target: date) -> dict[str, list]:
-        start_ms, end_ms = _local_date_to_utc_ms_range(target)
-        tokens_h = [0] * 24
-        tools_h  = [0] * 24
-        for f in self._iter_session_files(start_ms, end_ms):
-            try:
-                for raw_line in f.read_text(errors="ignore").splitlines():
-                    if not raw_line.strip():
-                        continue
-                    try:
-                        entry = json.loads(raw_line)
-                    except json.JSONDecodeError:
-                        continue
-                    ts_raw = entry.get("timestamp", "")
-                    if not isinstance(ts_raw, str):
-                        continue
-                    ts_ms = _iso_to_ms(ts_raw)
-                    if ts_ms is None or not (start_ms <= ts_ms < end_ms):
-                        continue
-                    if entry.get("type") != "assistant":
-                        continue
-                    hour  = _ms_to_local_hour(ts_ms)
-                    msg   = entry.get("message", {})
-                    usage = msg.get("usage", {})
-                    tokens_h[hour] += (
-                        usage.get("input_tokens", 0)
-                        + usage.get("cache_read_input_tokens", 0)
-                        + usage.get("cache_creation_input_tokens", 0)
-                    )
-                    for block in msg.get("content", []):
-                        if isinstance(block, dict) and block.get("type") == "tool_use":
-                            tools_h[hour] += 1
-            except OSError:
-                continue
-        sessions = _read_history_sessions(OPENCODE_DIR / "history.jsonl", start_ms, end_ms)
-        focus_h  = _focus_hourly_from_sessions(sessions, start_ms, end_ms)
-        return {"tokens": tokens_h, "tools": tools_h, "focus": focus_h}
+class OpenCodeProvider(AnthropicStyleProvider):
+    """OpenCode (SST, opencode.ai) proxies the Anthropic API and uses the same JSONL schema."""
+    session_dir = OPENCODE_DIR
+    history_file = OPENCODE_DIR / "history.jsonl"
+    filter_slashcmds = False

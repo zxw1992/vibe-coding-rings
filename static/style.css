@@ -212,13 +212,18 @@ header {
 .agent-breakdown { margin-top: 6px; }
 
 .breakdown-bar {
-  display: flex;
   height: 3px;
   border-radius: 2px;
   overflow: hidden;
   background: var(--bg);
-  gap: 1px;
   margin-bottom: 5px;
+}
+
+.breakdown-bar-fill {
+  display: flex;
+  height: 100%;
+  gap: 1px;
+  transition: width 0.4s ease;
 }
 
 .breakdown-seg {

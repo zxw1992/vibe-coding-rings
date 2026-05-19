@@ -228,9 +228,9 @@ function updateToday(data) {
 
   // Agent breakdown (only shown when 2+ agents have data for a metric)
   const bd = data.breakdown || [];
-  renderBreakdown("tokens-breakdown", bd, "tokens");
-  renderBreakdown("focus-breakdown",  bd, "focus_min");
-  renderBreakdown("tools-breakdown",  bd, "tool_calls");
+  renderBreakdown("tokens-breakdown", bd, "tokens",     metrics.token_pct);
+  renderBreakdown("focus-breakdown",  bd, "focus_min",  metrics.focus_pct);
+  renderBreakdown("tools-breakdown",  bd, "tool_calls", metrics.tool_pct);
 }
 
 // ── Main ring hover tooltips ──
@@ -442,20 +442,23 @@ const BREAKDOWN_FMT = {
   tool_calls: v => String(v),
 };
 
-function renderBreakdown(containerId, breakdown, field) {
+function renderBreakdown(containerId, breakdown, field, goalPct) {
   const el = document.getElementById(containerId);
   if (!el) return;
   const active = breakdown.filter(a => a[field] > 0);
   if (active.length < 2) { el.innerHTML = ""; return; }
   const total = active.reduce((s, a) => s + a[field], 0);
   const fmt = BREAKDOWN_FMT[field];
+  const fillPct = Math.min(1, Math.max(0, goalPct || 0)) * 100;
   el.innerHTML =
     '<div class="breakdown-bar">' +
+    `<div class="breakdown-bar-fill" style="width:${fillPct.toFixed(2)}%">` +
     active.map(a => {
-      const pct = (a[field] / total * 100).toFixed(1);
+      const pct = (a[field] / total * 100).toFixed(2);
       const color = AGENT_COLORS[a.id] || "#8E8E93";
       return `<div class="breakdown-seg" style="width:${pct}%;background:${color}"></div>`;
     }).join("") +
+    '</div>' +
     '</div>' +
     '<div class="breakdown-labels">' +
     active.map(a => {

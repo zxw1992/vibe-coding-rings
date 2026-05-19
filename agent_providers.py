@@ -248,9 +248,15 @@ class ClaudeCodeProvider(AgentProvider):
 
 class CodexProvider(AgentProvider):
     """
-    Best-effort provider for OpenAI Codex CLI (~/.codex/).
-    Handles both Anthropic-style and OpenAI-style field names.
+    Provider for OpenAI Codex CLI / Codex Desktop (~/.codex/).
+    Schema: rollout-*.jsonl with top-level {timestamp, type, payload}.
+      - tokens  : event_msg / token_count → payload.info.last_token_usage.total_tokens (per-turn delta)
+      - tools   : response_item / {function_call, custom_tool_call, web_search_call}
+      - focus   : event_msg / user_message timestamps grouped by session_meta.id
+                  (Codex Desktop no longer writes ~/.codex/history.jsonl)
     """
+
+    TOOL_PAYLOAD_TYPES = {"function_call", "custom_tool_call", "web_search_call"}
 
     def is_available(self) -> bool:
         return CODEX_DIR.exists()
@@ -258,54 +264,65 @@ class CodexProvider(AgentProvider):
     def _iter_session_files(self, start_ms: int, end_ms: int):
         mtime_lo = (start_ms / 1000) - 2 * 86_400
         mtime_hi = (end_ms / 1000) + 2 * 86_400
-        for f in CODEX_DIR.rglob("*.jsonl"):
+        sessions_root = CODEX_DIR / "sessions"
+        if not sessions_root.exists():
+            return
+        for f in sessions_root.rglob("*.jsonl"):
             try:
                 if mtime_lo <= f.stat().st_mtime <= mtime_hi:
                     yield f
             except OSError:
                 continue
 
-    def _parse_ts(self, entry: dict) -> int | None:
-        for key in ("timestamp", "created_at", "created"):
-            val = entry.get(key)
-            if isinstance(val, str):
-                ms = _iso_to_ms(val)
-                if ms is not None:
-                    return ms
-            elif isinstance(val, (int, float)) and val > 1_000_000_000:
-                ts = int(val)
-                return ts * 1000 if ts < 1e12 else ts
-        return None
+    def _classify(self, entry: dict) -> tuple[str, int, int]:
+        """Return (kind, tokens, tools_count). kind in {'token','tool',''}."""
+        payload = entry.get("payload") or {}
+        if not isinstance(payload, dict):
+            return ("", 0, 0)
+        ptype = payload.get("type")
+        if entry.get("type") == "event_msg" and ptype == "token_count":
+            info = payload.get("info")
+            if isinstance(info, dict):
+                last = info.get("last_token_usage") or {}
+                if isinstance(last, dict):
+                    return ("token", int(last.get("total_tokens", 0) or 0), 0)
+            return ("", 0, 0)
+        if entry.get("type") == "response_item" and ptype in self.TOOL_PAYLOAD_TYPES:
+            return ("tool", 0, 1)
+        return ("", 0, 0)
 
-    def _extract_tokens(self, entry: dict) -> int:
-        usage = entry.get("usage") or {}
-        # Anthropic-style (openai/codex supports multiple backends)
-        if "input_tokens" in usage:
-            return (usage.get("input_tokens", 0)
-                    + usage.get("cache_read_input_tokens", 0)
-                    + usage.get("cache_creation_input_tokens", 0))
-        # OpenAI-style
-        return usage.get("total_tokens", 0) or (
-            usage.get("prompt_tokens", 0) + usage.get("completion_tokens", 0)
-        )
-
-    def _extract_tool_calls(self, entry: dict) -> int:
-        count = 0
-        msg = entry.get("message") or entry
-        content = msg.get("content", [])
-        if isinstance(content, list):
-            for block in content:
-                if isinstance(block, dict) and block.get("type") == "tool_use":
-                    count += 1
-        # OpenAI-style tool_calls array
-        tool_calls = msg.get("tool_calls", [])
-        if isinstance(tool_calls, list):
-            count += len(tool_calls)
-        return count
-
-    def _is_assistant(self, entry: dict) -> bool:
-        role = entry.get("role") or (entry.get("message") or {}).get("role", "")
-        return role == "assistant" or entry.get("type") == "assistant"
+    def _collect_focus_sessions(self, start_ms: int, end_ms: int) -> dict[str, list[int]]:
+        sessions: dict[str, list[int]] = {}
+        for f in self._iter_session_files(start_ms, end_ms):
+            sid = f.stem  # fallback: filename stem if session_meta missing
+            try:
+                for raw_line in f.read_text(errors="ignore").splitlines():
+                    if not raw_line.strip():
+                        continue
+                    try:
+                        entry = json.loads(raw_line)
+                    except json.JSONDecodeError:
+                        continue
+                    payload = entry.get("payload") or {}
+                    if not isinstance(payload, dict):
+                        continue
+                    if entry.get("type") == "session_meta":
+                        meta_id = payload.get("id")
+                        if isinstance(meta_id, str) and meta_id:
+                            sid = meta_id
+                        continue
+                    if entry.get("type") != "event_msg" or payload.get("type") != "user_message":
+                        continue
+                    ts_raw = entry.get("timestamp", "")
+                    if not isinstance(ts_raw, str):
+                        continue
+                    ts_ms = _iso_to_ms(ts_raw)
+                    if ts_ms is None or not (start_ms <= ts_ms < end_ms):
+                        continue
+                    sessions.setdefault(sid, []).append(ts_ms)
+            except OSError:
+                continue
+        return sessions
 
     def collect_tokens_and_tools(self, target: date) -> tuple[int, int]:
         start_ms, end_ms = _local_date_to_utc_ms_range(target)
@@ -320,20 +337,22 @@ class CodexProvider(AgentProvider):
                         entry = json.loads(raw_line)
                     except json.JSONDecodeError:
                         continue
-                    if not self._is_assistant(entry):
+                    ts_raw = entry.get("timestamp", "")
+                    if not isinstance(ts_raw, str):
                         continue
-                    ts_ms = self._parse_ts(entry)
+                    ts_ms = _iso_to_ms(ts_raw)
                     if ts_ms is None or not (start_ms <= ts_ms < end_ms):
                         continue
-                    tokens     += self._extract_tokens(entry)
-                    tool_calls += self._extract_tool_calls(entry)
+                    kind, t, c = self._classify(entry)
+                    tokens     += t
+                    tool_calls += c
             except OSError:
                 continue
         return tokens, tool_calls
 
     def collect_focus_minutes(self, target: date) -> float:
         start_ms, end_ms = _local_date_to_utc_ms_range(target)
-        sessions = _read_history_sessions(CODEX_DIR / "history.jsonl", start_ms, end_ms)
+        sessions = self._collect_focus_sessions(start_ms, end_ms)
         return _focus_from_sessions(sessions, start_ms, end_ms)
 
     def collect_hourly(self, target: date) -> dict[str, list]:
@@ -349,17 +368,21 @@ class CodexProvider(AgentProvider):
                         entry = json.loads(raw_line)
                     except json.JSONDecodeError:
                         continue
-                    if not self._is_assistant(entry):
+                    ts_raw = entry.get("timestamp", "")
+                    if not isinstance(ts_raw, str):
                         continue
-                    ts_ms = self._parse_ts(entry)
+                    ts_ms = _iso_to_ms(ts_raw)
                     if ts_ms is None or not (start_ms <= ts_ms < end_ms):
                         continue
+                    kind, t, c = self._classify(entry)
+                    if not kind:
+                        continue
                     hour = _ms_to_local_hour(ts_ms)
-                    tokens_h[hour] += self._extract_tokens(entry)
-                    tools_h[hour]  += self._extract_tool_calls(entry)
+                    tokens_h[hour] += t
+                    tools_h[hour]  += c
             except OSError:
                 continue
-        sessions = _read_history_sessions(CODEX_DIR / "history.jsonl", start_ms, end_ms)
+        sessions = self._collect_focus_sessions(start_ms, end_ms)
         focus_h  = _focus_hourly_from_sessions(sessions, start_ms, end_ms)
         return {"tokens": tokens_h, "tools": tools_h, "focus": focus_h}
 

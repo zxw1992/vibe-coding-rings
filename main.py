@@ -1,4 +1,6 @@
 from __future__ import annotations
+import argparse
+import json as _json
 import sys
 import threading
 import time
@@ -205,6 +207,47 @@ static_dir = BASE_DIR / "static"
 app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
 
 
+# ---------- CLI handlers ----------
+
+def _cli_summary() -> None:
+    goals = load_config()
+    m = collect_day_metrics(date.today(), goals)
+    tokens_m = m.tokens / 1_000_000
+    if goals.lang == "zh":
+        print(f"今日: {tokens_m:.1f}M · {m.focus_min:.0f}min · {m.tool_calls}次")
+    else:
+        print(f"Today: {tokens_m:.1f}M · {m.focus_min:.0f}min · {m.tool_calls} calls")
+
+
+def _cli_json() -> None:
+    goals = load_config()
+    today = date.today()
+    m = collect_day_metrics(today, goals)
+    history = collect_history(goals, days=7)
+    streak = calc_streak(history)
+    breakdown = collect_agent_breakdown(today, goals)
+    for item in breakdown:
+        item["label"] = AGENT_META.get(item["id"], {}).get("label", item["id"])
+    print(_json.dumps({
+        "date": m.date,
+        "metrics": {
+            "tokens": m.tokens,
+            "tool_calls": m.tool_calls,
+            "focus_min": m.focus_min,
+            "token_pct": round(m.token_pct, 4),
+            "tool_pct":  round(m.tool_pct,  4),
+            "focus_pct": round(m.focus_pct, 4),
+        },
+        "goals": {
+            "tokens": goals.tokens,
+            "focus_min": goals.focus_min,
+            "tool_calls": goals.tool_calls,
+        },
+        "streak": streak,
+        "breakdown": breakdown,
+    }))
+
+
 # ---------- Entry point ----------
 
 def _open_browser():
@@ -212,7 +255,28 @@ def _open_browser():
     webbrowser.open(f"http://localhost:{PORT}")
 
 
+def _parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        prog="vibe-coding-rings",
+        description="Local dashboard for AI coding agent usage. "
+                    "Without flags, starts the web UI at http://localhost:8765.",
+    )
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--summary", action="store_true",
+                       help="print today's metrics as a single line and exit")
+    group.add_argument("--json", action="store_true",
+                       help="print today's metrics as JSON and exit (for scripts)")
+    return parser.parse_args(argv)
+
+
 if __name__ == "__main__":
+    args = _parse_args(sys.argv[1:])
+    if args.summary:
+        _cli_summary()
+        sys.exit(0)
+    if args.json:
+        _cli_json()
+        sys.exit(0)
     print(f"Starting Vibe Coding Rings at http://localhost:{PORT}")
     threading.Thread(target=_open_browser, daemon=True).start()
     uvicorn.run(app, host="127.0.0.1", port=PORT, log_level="warning")

@@ -24,11 +24,27 @@ A local dashboard that visualises your AI coding agent usage as three animated c
 
 - Animated ring dashboard with daily progress toward configurable goals
 - **Multi-agent support** — toggle which AI coding tools contribute data (Claude Code, Codex CLI, Gemini CLI, OpenCode)
+- **Per-agent breakdown bars** under each ring stat — see at a glance which AI tool contributed how much of today's progress
+- **Weekly Recap** — Apple Fitness-style summary page: this-week totals with deltas vs last week, top day awards, most active hour, per-agent contribution, per-day mini rings
 - 7-day history with mini rings — click any day to see all three metrics with hourly breakdowns
 - Hourly drill-down for each metric (click any ring stat row for today's data)
+- **CLI modes** — `--summary` for a one-liner, `--json` for scripting; embeds nicely into tmux statuslines, zsh prompts, Raycast scripts
 - macOS menubar app — glanceable stats without opening the browser
 - Bilingual UI — switch between 中文 and English at any time
 - Zero config: reads local agent data directly, no API keys, no telemetry
+
+## Weekly Recap
+
+Click **Weekly Recap** in the 7-Day History card header to open the weekly review page. A small red hint dot appears on Sundays and Mondays. ESC or Back to close.
+
+![Weekly Recap](docs/weekly.png)
+
+What it shows:
+
+- **Three hero numbers** — this week's totals for Consume / Focus / Action with ↑↓ percentage delta against the same period last week (compared weekday-for-weekday so the comparison stays honest mid-week)
+- **Awards** — Top Token Day 🏆 · Most Focused Day 🎯 · Most Active Hour ⚡ · Goal Streak 🔥 (each only shown when relevant)
+- **This Week by Day** — seven mini Activity Rings, future days dimmed, today bolded; click any day to drill into its hourly detail page
+- **By Agent** — horizontal token bars per AI tool for the week, sharing the same palette as the main dashboard's data-source chips
 
 ## Requirements
 
@@ -56,6 +72,14 @@ python main.py
 python menubar.py
 ```
 
+**CLI modes** — print today's data to stdout, no browser, no server
+```bash
+python main.py --summary    # → Today: 19.7M · 135min · 138 calls
+python main.py --json       # → machine-readable JSON for scripts
+```
+
+Typical CLI uses: tmux status bar, zsh prompt, Raycast / Alfred scripts, xbar / SwiftBar, cron archival to JSONL.
+
 **Sanity check** — print today's metrics and 7-day history to stdout
 ```bash
 python data_collector.py
@@ -72,13 +96,15 @@ Adjust them via the "每日目标 / Daily Goals" panel in the web UI — drag th
 ```
 config.py              Goals dataclass + load/save config.json
 agent_providers.py     AgentProvider ABC + per-agent implementations
+                       (AnthropicStyleProvider base shared by Claude Code + OpenCode)
 data_collector.py      Aggregates metrics across active providers
-main.py                FastAPI server + browser auto-launch
+main.py                FastAPI server + browser auto-launch + CLI handlers
 menubar.py             System tray app (rumps on macOS, pystray on Windows/Linux)
 static/
-  index.html           Single-page app (main dashboard + detail overlays)
+  index.html           Single-page app (main dashboard + detail/weekly overlays)
   style.css            Dark theme, Apple Fitness colour palette
-  rings.js             All frontend logic: rings, charts, goals, agent chips, language
+  rings.js             All frontend logic: rings, charts, weekly recap,
+                       goals, agent chips, language
 ```
 
 ## How data is collected
@@ -93,6 +119,20 @@ Each agent provider reads its own local files — all read-only, nothing leaves 
 | OpenCode | `~/.opencode/**/*.jsonl` | `~/.opencode/history.jsonl` |
 
 Metrics from all enabled agents are summed. Agents whose data directory doesn't exist are shown as unavailable in the UI. You can toggle any agent on or off from the "Data Sources" chip bar.
+
+## HTTP API
+
+The local server exposes a small read-only API at `http://localhost:8765`:
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/today` | Today's metrics + streak + goals + per-agent breakdown |
+| GET | `/api/history` | Last 7 days of `DayMetrics` |
+| GET | `/api/weekly` | Weekly Recap: this-week totals, deltas vs last week, awards, breakdown |
+| GET | `/api/hourly?metric=tokens\|tools\|focus&d=YYYY-MM-DD` | 24-bucket hourly breakdown |
+| GET | `/api/goals` · POST `/api/goals` | Read / save daily goals |
+| GET | `/api/agents` · POST `/api/agents` | Read / toggle enabled agents |
+| POST | `/api/lang` | Save language preference (`zh` / `en`) |
 
 ## Dependencies
 

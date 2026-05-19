@@ -24,11 +24,27 @@
 
 - 动态圆环看板，显示每日目标完成进度
 - **多 Agent 支持** — 在「数据来源」区域切换启用哪些 AI 编程工具（Claude Code、Codex CLI、Gemini CLI、OpenCode）
-- 7 日历史迷你圆环——点击任意一天可查看该日期三个指标的每小时详情
+- **各 Agent 贡献条** — 每个环统计行下方显示各 AI 工具对今日进度的具体贡献，一眼可辨
+- **本周回顾** — 苹果健身环周总结风格：本周累计 + 与上周同期对比、最佳日奖牌、最活跃时段、各 Agent 贡献、本周每日小环
+- 7 日历史迷你圆环 — 点击任意一天可查看该日期三个指标的每小时详情
 - 点击今日任意指标行可查看该指标的每小时细分数据
-- macOS 菜单栏应用——无需打开浏览器即可瞥见数据
+- **命令行模式** — `--summary` 一行人话、`--json` 机器友好；可嵌入 tmux 状态栏、zsh prompt、Raycast 脚本
+- macOS 菜单栏应用 — 无需打开浏览器即可瞥见数据
 - 中英文双语界面，随时切换
 - 零配置：直接读取本地数据，无 API Key，无遥测
+
+## 本周回顾
+
+在 7 日历史卡片标题右侧点击「**本周回顾**」打开周总结页。周日和周一会显示一个小红点提醒。按 ESC 或返回键关闭。
+
+![本周回顾](docs/weekly.png)
+
+页面内容：
+
+- **三个 hero 数字** — 本周累计的「消耗 / 专注 / 行动」总量，并附带与上周同期对比的 ↑↓ 百分比 delta（按相同 weekday 对比，避免"本周才过 2 天 vs 上周全周"的失真）
+- **奖牌** — Token 最高日 🏆 · 最专注日 🎯 · 最活跃时段 ⚡ · 达标连续 🔥（仅在有数据时显示）
+- **本周每日** — 七个迷你 Activity Rings，未来日子淡化，"今日" label 加粗；点击任意一天直接跳转到该日的每小时详情页
+- **各 AI 工具贡献** — 本周各 AI 工具的水平 token 条，配色跟主页「数据来源」chip 一致
 
 ## 环境要求
 
@@ -56,6 +72,14 @@ python main.py
 python menubar.py
 ```
 
+**命令行模式** — 把今日数据打到终端，不开浏览器、不起 server
+```bash
+python main.py --summary    # → 今日: 19.7M · 135min · 138次
+python main.py --json       # → 机器可读 JSON，方便接脚本
+```
+
+典型用途：tmux 状态栏、zsh prompt、Raycast / Alfred 脚本、xbar / SwiftBar、cron 定时归档到 JSONL。
+
 **数据检查** — 将今日指标和 7 日历史输出到终端
 ```bash
 python data_collector.py
@@ -72,18 +96,20 @@ python data_collector.py
 ```
 config.py              目标配置 + config.json 读写
 agent_providers.py     AgentProvider 抽象基类 + 各 Agent 实现
+                       （AnthropicStyleProvider 基类被 Claude Code + OpenCode 共享）
 data_collector.py      跨 Agent 聚合指标数据
-main.py                FastAPI 服务器 + 自动打开浏览器
+main.py                FastAPI 服务器 + 自动打开浏览器 + CLI 入口
 menubar.py             系统托盘应用（macOS 用 rumps，Windows/Linux 用 pystray）
 static/
-  index.html           单页应用（主看板 + 多个详情页）
+  index.html           单页应用（主看板 + 详情页 + 本周回顾）
   style.css            深色主题，苹果健身环配色
-  rings.js             所有前端逻辑：圆环、图表、Agent 切换、目标、语言
+  rings.js             所有前端逻辑：圆环、图表、本周回顾、
+                       Agent 切换、目标、语言
 ```
 
 ## 数据来源
 
-每个 Agent 读取各自的本地文件——均为只读，数据不会离开设备：
+每个 Agent 读取各自的本地文件 — 均为只读，数据不会离开设备：
 
 | Agent | 会话文件 | 专注时间来源 |
 |-------|---------|------------|
@@ -95,6 +121,20 @@ static/
 所有已启用 Agent 的指标求和后展示。数据目录不存在的 Agent 在 UI 中显示为不可用。可在「数据来源」chip 栏随时开关任意 Agent。
 
 **数据永远不会离开你的设备。**
+
+## HTTP API
+
+本地服务在 `http://localhost:8765` 暴露一组只读 API：
+
+| 方法 | 路径 | 描述 |
+|------|------|------|
+| GET | `/api/today` | 今日指标 + streak + 目标 + 各 Agent 贡献 |
+| GET | `/api/history` | 最近 7 天的 `DayMetrics` |
+| GET | `/api/weekly` | 本周回顾：本周累计、上周同期 delta、奖牌、Agent 贡献 |
+| GET | `/api/hourly?metric=tokens\|tools\|focus&d=YYYY-MM-DD` | 24 桶每小时细分 |
+| GET | `/api/goals` · POST `/api/goals` | 读取 / 保存每日目标 |
+| GET | `/api/agents` · POST `/api/agents` | 读取 / 切换启用 Agent |
+| POST | `/api/lang` | 保存语言偏好（`zh` / `en`） |
 
 ## 依赖
 

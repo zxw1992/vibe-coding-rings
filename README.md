@@ -37,7 +37,7 @@ A local dashboard that visualises your AI coding agent usage as three animated c
 
 Click **Weekly Recap** in the 7-Day History card header to open the weekly review page. A small red hint dot appears on Sundays and Mondays. ESC or Back to close.
 
-![Weekly Recap](docs/weekly.png)
+![Weekly Recap](docs/weekly_en.png)
 
 What it shows:
 
